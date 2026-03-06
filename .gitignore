@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Database (generated at runtime — never commit this)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment variables (contain secrets)
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.log

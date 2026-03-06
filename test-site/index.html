@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StartupInsight AI — Test Site</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d2e;
+      --border:   #2a2d3e;
+      --accent:   #6366f1;
+      --accent2:  #22d3ee;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --green:    #22c55e;
+      --red:      #ef4444;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(15,17,23,0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .brand { font-weight: 700; font-size: 1.1rem; color: var(--accent); }
+    .brand span { color: var(--accent2); }
+    nav a {
+      color: var(--muted); text-decoration: none; margin-left: 1.5rem;
+      font-size: 0.9rem; transition: color .2s;
+    }
+    nav a:hover { color: var(--text); }
+
+    /* ── Layout ── */
+    main { max-width: 900px; margin: 0 auto; padding: 3rem 2rem 8rem; }
+
+    section { margin-bottom: 4rem; }
+    h1 { font-size: 2.4rem; font-weight: 800; margin-bottom: 0.5rem; }
+    h1 span { color: var(--accent); }
+    h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1.2rem;
+         color: var(--accent2); border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+    p  { color: var(--muted); margin-bottom: 1rem; }
+
+    /* ── Buttons ── */
+    .btn-group { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
+
+    .btn {
+      padding: 0.6rem 1.4rem; border-radius: 8px; border: none;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: .15s;
+    }
+    .btn-primary  { background: var(--accent);  color: #fff; }
+    .btn-secondary{ background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+    .btn-danger   { background: var(--red);     color: #fff; }
+    .btn-success  { background: var(--green);   color: #fff; }
+    .btn:hover    { opacity: 0.85; transform: translateY(-1px); }
+    .btn:active   { transform: translateY(0); }
+
+    /* ── Form ── */
+    form {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2rem; max-width: 480px;
+    }
+    .field { margin-bottom: 1.2rem; }
+    label  { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: .4rem; }
+    input, textarea, select {
+      width: 100%; padding: 0.6rem 0.9rem; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 0.9rem; outline: none;
+      transition: border-color .2s;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 90px; }
+
+    /* ── Event Log ── */
+    #event-log {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1rem;
+      max-height: 320px; overflow-y: auto;
+      font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.8rem;
+    }
+    .log-entry {
+      display: flex; align-items: flex-start; gap: .6rem;
+      padding: .4rem 0; border-bottom: 1px solid var(--border);
+      animation: fadeIn .3s ease;
+    }
+    .log-entry:last-child { border-bottom: none; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; } }
+    .log-badge {
+      padding: .15rem .5rem; border-radius: 4px; font-size: .72rem;
+      font-weight: 700; white-space: nowrap; flex-shrink: 0;
+    }
+    .badge-page_view     { background: #1e3a5f; color: #60a5fa; }
+    .badge-click         { background: #1f2d1f; color: #4ade80; }
+    .badge-scroll_depth  { background: #2d1f1f; color: #f87171; }
+    .badge-form_submit   { background: #1f1e2d; color: #a78bfa; }
+    .badge-session_start { background: #1f2d26; color: #34d399; }
+    .badge-custom        { background: #2d261f; color: #fbbf24; }
+    .badge-default       { background: #222;    color: #94a3b8; }
+    .log-text { color: var(--muted); font-size: .8rem; word-break: break-all; }
+
+    #log-empty { color: var(--muted); text-align: center; padding: 1.5rem 0; font-size: .85rem; }
+
+    /* ── Scroll test ── */
+    .scroll-block {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 2rem; margin-top: 1rem;
+    }
+    .progress-bar-wrap { background: var(--border); border-radius: 999px; height: 6px; margin: 1rem 0; }
+    .progress-bar      { background: var(--accent); height: 100%; border-radius: 999px; width: 0; transition: width .1s; }
+    .milestone-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .milestone {
+      padding: .3rem .8rem; border-radius: 20px; font-size: .8rem;
+      background: var(--border); color: var(--muted); transition: .2s;
+    }
+    .milestone.hit { background: var(--accent); color: #fff; }
+
+    /* ── Cards ── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; text-align: center; cursor: pointer; transition: .2s;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .card-icon { font-size: 2rem; margin-bottom: .5rem; }
+    .card-title { font-weight: 600; font-size: .9rem; }
+    .card-desc  { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
+
+    /* ── Spacer for scroll testing ── */
+    .spacer { height: 80vh; display: flex; align-items: center; justify-content: center;
+              color: var(--border); font-size: 1.2rem; border: 1px dashed var(--border);
+              border-radius: 12px; margin: 2rem 0; }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<nav>
+  <div class="brand">Startup<span>Insight</span> AI</div>
+  <div>
+    <a href="#features">Features</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#contact">Contact</a>
+    <a href="#log">Event Log</a>
+  </div>
+</nav>
+
+<main>
+
+  <!-- ── Hero ──────────────────────────────────────────────────────────────── -->
+  <section>
+    <h1>Real Analytics. <span>Zero Fuss.</span></h1>
+    <p>Drop one script tag. Understand everything users do on your website. No config needed.</p>
+    <div class="btn-group">
+      <button class="btn btn-primary"   id="btn-cta">Get Started Free</button>
+      <button class="btn btn-secondary" id="btn-demo">Watch Demo</button>
+      <button class="btn btn-success"   id="btn-docs">Read the Docs</button>
+    </div>
+  </section>
+
+  <!-- ── Feature Cards ─────────────────────────────────────────────────────── -->
+  <section id="features">
+    <h2>Features</h2>
+    <p>Click any card — a custom event fires and shows up in the log below.</p>
+    <div class="cards">
+      <div class="card" data-feature="page_analytics">
+        <div class="card-icon">📊</div>
+        <div class="card-title">Page Analytics</div>
+        <div class="card-desc">Views, time-on-page, bounce rate</div>
+      </div>
+      <div class="card" data-feature="session_tracking">
+        <div class="card-icon">👤</div>
+        <div class="card-title">Session Tracking</div>
+        <div class="card-desc">Unique visitors, session depth</div>
+      </div>
+      <div class="card" data-feature="funnel_analysis">
+        <div class="card-icon">🔀</div>
+        <div class="card-title">Funnels</div>
+        <div class="card-desc">Where do users drop off?</div>
+      </div>
+      <div class="card" data-feature="heatmaps">
+        <div class="card-icon">🔥</div>
+        <div class="card-title">Heatmaps</div>
+        <div class="card-desc">Click positions on every page</div>
+      </div>
+      <div class="card" data-feature="ai_insights">
+        <div class="card-icon">🤖</div>
+        <div class="card-title">AI Insights</div>
+        <div class="card-desc">GPT-powered behaviour summaries</div>
+      </div>
+      <div class="card" data-feature="alerts">
+        <div class="card-icon">🔔</div>
+        <div class="card-title">Smart Alerts</div>
+        <div class="card-desc">Get notified when metrics change</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Scroll Depth Test ─────────────────────────────────────────────────── -->
+  <section id="pricing">
+    <h2>Scroll Depth Test</h2>
+    <p>Scroll down this page to see scroll_depth events fire at 25%, 50%, and 75%.</p>
+    <div class="scroll-block">
+      <div>Current scroll: <strong id="scroll-pct">0%</strong></div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="scroll-bar"></div></div>
+      <div class="milestone-row">
+        <div class="milestone" id="m25">25%</div>
+        <div class="milestone" id="m50">50%</div>
+        <div class="milestone" id="m75">75%</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="spacer">↓  Keep scrolling to trigger depth events  ↓</div>
+
+  <!-- ── Contact Form ───────────────────────────────────────────────────────── -->
+  <section id="contact">
+    <h2>Contact Form</h2>
+    <p>Submit the form to generate a <code>form_submit</code> event.</p>
+    <form id="contact-form" onsubmit="return false;">
+      <div class="field">
+        <label for="name">Full Name</label>
+        <input type="text" id="name" name="name" placeholder="Jane Doe" />
+      </div>
+      <div class="field">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" name="email" placeholder="jane@startup.com" />
+      </div>
+      <div class="field">
+        <label for="plan">Interested In</label>
+        <select id="plan" name="plan">
+          <option value="">Select a plan…</option>
+          <option value="free">Free — $0/month</option>
+          <option value="pro">Pro — $29/month</option>
+          <option value="enterprise">Enterprise — Custom</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="message">Message</label>
+        <textarea id="message" name="message" placeholder="Tell us about your project…"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%">Send Message</button>
+    </form>
+  </section>
+
+  <!-- ── Manual / Custom Events ────────────────────────────────────────────── -->
+  <section>
+    <h2>Manual Custom Events</h2>
+    <p>Test the <code>window.StartupInsightAI.track()</code> API directly.</p>
+    <div class="btn-group">
+      <button class="btn btn-primary"   onclick="fireCustom('upgrade_clicked', { plan: 'pro' })">Track: upgrade_clicked</button>
+      <button class="btn btn-secondary" onclick="fireCustom('video_played', { timestamp_sec: 12 })">Track: video_played</button>
+      <button class="btn btn-danger"    onclick="fireCustom('experiment_exposed', { variant: 'B' })">Track: experiment_exposed</button>
+      <button class="btn btn-success"   onclick="window.StartupInsightAI.flush(); alert('Queue flushed!')">Force Flush Queue</button>
+    </div>
+  </section>
+
+  <!-- ── Live Event Log ─────────────────────────────────────────────────────── -->
+  <section id="log">
+    <h2>Live Event Log</h2>
+    <p>Events appear here as they're queued (before being sent to the backend).</p>
+    <div id="event-log">
+      <div id="log-empty">Waiting for events…</div>
+    </div>
+    <div style="margin-top:.75rem; display:flex; gap:.5rem;">
+      <button class="btn btn-secondary" style="font-size:.8rem" onclick="clearLog()">Clear Log</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<!--  Tracker setup — replace the key with your real pk_live_xxx after         -->
+<!--  registering at http://localhost:5000/auth/register                       -->
+<!-- ────────────────────────────────────────────────────────────────────────── -->
+<script>
+  window.SI_PROJECT_KEY = 'REPLACE_WITH_YOUR_API_KEY';
+</script>
+<script src="http://localhost:5000/tracker.js"></script>
+
+<script>
+  // ── Intercept tracker to show events in the on-page log ─────────────────────
+  (function () {
+    var logEl    = document.getElementById('event-log');
+    var emptyEl  = document.getElementById('log-empty');
+
+    function logEvent(type, extra) {
+      if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+
+      var entry = document.createElement('div');
+      entry.className = 'log-entry';
+
+      var badgeClass = 'badge-default';
+      if (['page_view','click','scroll_depth','form_submit','session_start'].includes(type)) {
+        badgeClass = 'badge-' + type;
+      } else {
+        badgeClass = 'badge-custom';
+      }
+
+      var detail = extra?.metadata
+        ? JSON.stringify(extra.metadata).slice(0, 120)
+        : (extra?.element || '');
+
+      entry.innerHTML =
+        '<span class="log-badge ' + badgeClass + '">' + type + '</span>' +
+        '<span class="log-text">' +
+          (detail ? detail + ' · ' : '') +
+          window.location.pathname +
+        '</span>';
+
+      logEl.insertBefore(entry, logEl.firstChild);
+
+      // Keep log tidy
+      while (logEl.children.length > 50) {
+        logEl.removeChild(logEl.lastChild);
+      }
+    }
+
+    // Patch the tracker's internal track function by wrapping the public API
+    // and monkey-patching after initialization
+    var _origTrack = window.StartupInsightAI?.track;
+    if (_origTrack) {
+      window.StartupInsightAI.track = function (name, meta) {
+        logEvent(name, { metadata: meta });
+        _origTrack(name, meta);
+      };
+    }
+
+    // Also listen to DOM events to log auto-tracked ones
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('#event-log') || e.target.closest('button[onclick*="flush"]')) return;
+      logEvent('click', { element: e.target.tagName, metadata: {} });
+    }, { passive: true });
+
+    document.addEventListener('submit', function (e) {
+      logEvent('form_submit', { metadata: { formId: e.target.id } });
+    }, { passive: true });
+
+    // Log the initial events
+    logEvent('session_start', {});
+    logEvent('page_view',     {});
+
+    // ── Scroll progress bar update ─────────────────────────────────────────────
+    var pctEl  = document.getElementById('scroll-pct');
+    var barEl  = document.getElementById('scroll-bar');
+    var milestones = { 25: document.getElementById('m25'), 50: document.getElementById('m50'), 75: document.getElementById('m75') };
+
+    window.addEventListener('scroll', function () {
+      var scrollTop  = window.pageYOffset || 0;
+      var docHeight  = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;
+      var pct        = docHeight <= 0 ? 100 : Math.min(100, Math.round((scrollTop / docHeight) * 100));
+
+      pctEl.textContent = pct + '%';
+      barEl.style.width = pct + '%';
+
+      [25, 50, 75].forEach(function (m) {
+        if (pct >= m) {
+          milestones[m].classList.add('hit');
+        }
+      });
+    }, { passive: true });
+
+    // ── Scroll depth event logging ─────────────────────────────────────────────
+    var fired = {};
+    window.addEventListener('scroll', function () {
+      var scrollTop  = window.pageYOffset || 0;
+      var docHeight  = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;
+      var pct        = docHeight <= 0 ? 100 : Math.min(100, Math.round((scrollTop / docHeight) * 100));
+
+      [25, 50, 75].forEach(function (m) {
+        if (pct >= m && !fired[m]) {
+          fired[m] = true;
+          logEvent('scroll_depth', { metadata: { depth_percent: m } });
+        }
+      });
+    }, { passive: true });
+  })();
+
+  // ── Feature card clicks ────────────────────────────────────────────────────
+  document.querySelectorAll('.card[data-feature]').forEach(function (card) {
+    card.addEventListener('click', function () {
+      var feature = card.getAttribute('data-feature');
+      if (window.StartupInsightAI) {
+        window.StartupInsightAI.track('feature_viewed', { feature: feature });
+      }
+    });
+  });
+
+  // ── Custom event helper ────────────────────────────────────────────────────
+  function fireCustom(name, meta) {
+    if (window.StartupInsightAI) {
+      window.StartupInsightAI.track(name, meta);
+    }
+  }
+
+  function clearLog() {
+    var logEl = document.getElementById('event-log');
+    logEl.innerHTML = '<div id="log-empty" style="color:var(--muted);text-align:center;padding:1.5rem 0;font-size:.85rem">Log cleared. Interact with the page…</div>';
+  }
+</script>
+
+</body>
+</html>
