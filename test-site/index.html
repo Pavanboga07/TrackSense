@@ -102,13 +102,29 @@
       padding: .15rem .5rem; border-radius: 4px; font-size: .72rem;
       font-weight: 700; white-space: nowrap; flex-shrink: 0;
     }
-    .badge-page_view     { background: #1e3a5f; color: #60a5fa; }
-    .badge-click         { background: #1f2d1f; color: #4ade80; }
-    .badge-scroll_depth  { background: #2d1f1f; color: #f87171; }
-    .badge-form_submit   { background: #1f1e2d; color: #a78bfa; }
-    .badge-session_start { background: #1f2d26; color: #34d399; }
-    .badge-custom        { background: #2d261f; color: #fbbf24; }
-    .badge-default       { background: #222;    color: #94a3b8; }
+    .badge-page_view      { background: #1e3a5f; color: #60a5fa; }
+    .badge-click          { background: #1f2d1f; color: #4ade80; }
+    .badge-scroll_depth   { background: #2d1f1f; color: #f87171; }
+    .badge-form_submit    { background: #1f1e2d; color: #a78bfa; }
+    .badge-session_start  { background: #1f2d26; color: #34d399; }
+    .badge-page_exit      { background: #2d1a1a; color: #fb923c; }
+    .badge-js_error       { background: #3d1a1a; color: #f87171; }
+    .badge-rage_click     { background: #3d1f1f; color: #fca5a5; }
+    .badge-outbound_click { background: #1f2a2d; color: #67e8f9; }
+    .badge-form_start     { background: #1f2030; color: #c4b5fd; }
+    .badge-form_abandon   { background: #2d2020; color: #fda4af; }
+    .badge-element_viewed { background: #1f2d22; color: #86efac; }
+    .badge-video_play     { background: #1f2030; color: #93c5fd; }
+    .badge-video_pause    { background: #26261f; color: #fde68a; }
+    .badge-video_complete { background: #1a2d1a; color: #6ee7b7; }
+    .badge-text_copy      { background: #26201f; color: #fdba74; }
+    .badge-tab_hidden     { background: #222;    color: #94a3b8; }
+    .badge-tab_visible    { background: #1f2a20; color: #a7f3d0; }
+    .badge-identify       { background: #1e2d3a; color: #7dd3fc; }
+    .badge-page_performance { background: #1e1f2d; color: #a5b4fc; }
+    .badge-goal_triggered { background: #2d1f3a; color: #d8b4fe; font-weight:800; }
+    .badge-custom         { background: #2d261f; color: #fbbf24; }
+    .badge-default        { background: #222;    color: #94a3b8; }
     .log-text { color: var(--muted); font-size: .8rem; word-break: break-all; }
 
     #log-empty { color: var(--muted); text-align: center; padding: 1.5rem 0; font-size: .85rem; }
@@ -142,6 +158,24 @@
     .spacer { height: 80vh; display: flex; align-items: center; justify-content: center;
               color: var(--border); font-size: 1.2rem; border: 1px dashed var(--border);
               border-radius: 12px; margin: 2rem 0; }
+
+    /* ── Demo boxes ── */
+    .demo-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; margin-top: 1rem;
+    }
+    .demo-box h3 { font-size: .9rem; color: var(--accent2); margin-bottom: .75rem; }
+    code {
+      background: #0d0f1a; color: #a5b4fc; padding: .15rem .4rem;
+      border-radius: 4px; font-size: .82rem;
+    }
+    .tag { display: inline-block; background: var(--border); color: var(--muted);
+           padding: .1rem .5rem; border-radius: 4px; font-size: .75rem; margin: .2rem; }
+    video { width: 100%; border-radius: 8px; margin-top: .75rem; }
+    .outbound-links a {
+      display: inline-block; margin-right: 1rem; color: var(--accent2);
+      font-size: .9rem;
+    }
   </style>
 </head>
 <body>
@@ -154,6 +188,7 @@
     <a href="#pricing">Pricing</a>
     <a href="#contact">Contact</a>
     <a href="#log">Event Log</a>
+    <a href="https://github.com" target="_blank" rel="noopener">GitHub ↗</a>
   </div>
 </nav>
 
@@ -164,9 +199,14 @@
     <h1>Real Analytics. <span>Zero Fuss.</span></h1>
     <p>Drop one script tag. Understand everything users do on your website. No config needed.</p>
     <div class="btn-group">
-      <button class="btn btn-primary"   id="btn-cta">Get Started Free</button>
-      <button class="btn btn-secondary" id="btn-demo">Watch Demo</button>
-      <button class="btn btn-success"   id="btn-docs">Read the Docs</button>
+      <button class="btn btn-primary"   id="btn-cta"
+              data-si-track="hero_cta"
+              data-si-goal="signup_intent"
+              data-si-goal-value="0">Get Started Free</button>
+      <button class="btn btn-secondary" id="btn-demo"
+              data-si-goal="demo_requested">Watch Demo</button>
+      <button class="btn btn-success"   id="btn-docs"
+              data-si-goal="docs_viewed">Read the Docs</button>
     </div>
   </section>
 
@@ -251,19 +291,148 @@
         <label for="message">Message</label>
         <textarea id="message" name="message" placeholder="Tell us about your project…"></textarea>
       </div>
-      <button type="submit" class="btn btn-primary" style="width:100%">Send Message</button>
+      <button type="submit" class="btn btn-primary"
+              data-si-goal="contact_form_submitted"
+              data-si-goal-value="0"
+              style="width:100%">Send Message</button>
     </form>
   </section>
 
-  <!-- ── Manual / Custom Events ────────────────────────────────────────────── -->
-  <section>
-    <h2>Manual Custom Events</h2>
-    <p>Test the <code>window.StartupInsightAI.track()</code> API directly.</p>
-    <div class="btn-group">
-      <button class="btn btn-primary"   onclick="fireCustom('upgrade_clicked', { plan: 'pro' })">Track: upgrade_clicked</button>
-      <button class="btn btn-secondary" onclick="fireCustom('video_played', { timestamp_sec: 12 })">Track: video_played</button>
-      <button class="btn btn-danger"    onclick="fireCustom('experiment_exposed', { variant: 'B' })">Track: experiment_exposed</button>
-      <button class="btn btn-success"   onclick="window.StartupInsightAI.flush(); alert('Queue flushed!')">Force Flush Queue</button>
+  <!-- ── v2 Feature Demos ───────────────────────────────────────────────────── -->
+  <section id="v2-demos">
+    <h2>Tracker v2.1 — New Features</h2>
+
+    <!-- Goal Tracking -->
+    <div class="demo-box">
+      <h3>🎯 Goal Tracking — <code>data-si-goal</code> attribute</h3>
+      <p>These buttons emit a <code>goal_triggered</code> event on click — the definitive conversion signal
+         the AI uses. Each event carries the full journey (which pages the user visited before clicking)
+         and <code>css_path</code> so the element is unambiguously identified.</p>
+      <div class="btn-group">
+        <button class="btn btn-primary"
+                data-si-goal="upgrade_clicked"
+                data-si-goal-value="29">
+          💳 Upgrade to Pro — $29/mo
+        </button>
+        <button class="btn btn-secondary"
+                data-si-goal="trial_started"
+                data-si-goal-value="0">
+          🚀 Start Free Trial
+        </button>
+        <button class="btn btn-success"
+                data-si-goal="integration_installed"
+                data-si-goal-value="0">
+          📦 Install Integration
+        </button>
+      </div>
+      <p style="margin-top:.75rem;font-size:.8rem;color:var(--muted)">
+        Each <code>goal_triggered</code> event includes: <code>goal_name</code>, <code>goal_value</code>,
+        <code>css_path</code>, <code>time_on_page_ms</code>, and <code>journey[]</code>
+        (the last 10 steps the user took before converting).
+      </p>
+    </div>
+
+    <!-- User Identity -->
+    <div class="demo-box">
+      <h3>👤 User Identification — <code>SI.identify()</code></h3>
+      <p>Ties all subsequent events to a real user. Stored in localStorage across sessions.</p>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="demoIdentify('user_42', { plan: 'pro', name: 'Alice' })">
+          identify('user_42', { plan: 'pro' })
+        </button>
+        <button class="btn btn-secondary" onclick="demoIdentify('user_99', { plan: 'free', name: 'Bob' })">
+          identify('user_99', { plan: 'free' })
+        </button>
+        <button class="btn btn-danger" onclick="demoIdentify(null)">Clear Identity</button>
+      </div>
+      <p style="margin-top:.75rem; font-size:.82rem" id="identity-status">No user identified.</p>
+    </div>
+
+    <!-- A/B Variants -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>🧪 A/B Test Variants — <code>SI.setVariant()</code></h3>
+      <p>Set once; variant auto-attaches to every subsequent event as <code>metadata.variant_*</code>.</p>
+      <div class="btn-group">
+        <button class="btn btn-primary"   onclick="SI.setVariant('homepage_hero', 'A'); showToast('Variant A set')">Set Hero → A</button>
+        <button class="btn btn-secondary" onclick="SI.setVariant('homepage_hero', 'B'); showToast('Variant B set')">Set Hero → B</button>
+        <button class="btn btn-success"   onclick="SI.setVariant('pricing_layout', 'cards'); showToast('Pricing variant set')">Set Pricing → cards</button>
+      </div>
+    </div>
+
+    <!-- Element Visibility -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>👁 Element Visibility — <code>data-si-track</code> &amp; <code>SI.trackElement()</code></h3>
+      <p>These elements fire <code>element_viewed</code> when they scroll into view (once per load).</p>
+      <div style="margin-top:.75rem; display:flex; gap:.75rem; flex-wrap:wrap">
+        <div data-si-track="pricing_section_cta" style="background:#1e3a5f;padding:1rem 1.5rem;border-radius:8px;cursor:pointer;border:1px solid #60a5fa">
+          🏷 <strong>data-si-track="pricing_section_cta"</strong>
+        </div>
+        <div data-si-track="footer_signup_banner" style="background:#1a2d1a;padding:1rem 1.5rem;border-radius:8px;cursor:pointer;border:1px solid #4ade80">
+          🏷 <strong>data-si-track="footer_signup_banner"</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Outbound Links -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>🔗 Outbound Click Tracking</h3>
+      <p>Clicks on external links auto-fire <code>outbound_click</code> with the destination URL.</p>
+      <div class="outbound-links" style="margin-top:.75rem">
+        <a href="https://posthog.com"    target="_blank" rel="noopener">PostHog ↗</a>
+        <a href="https://plausible.io"   target="_blank" rel="noopener">Plausible ↗</a>
+        <a href="https://mixpanel.com"   target="_blank" rel="noopener">Mixpanel ↗</a>
+        <a href="https://stripe.com"     target="_blank" rel="noopener">Stripe ↗</a>
+      </div>
+    </div>
+
+    <!-- Video Tracking -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>🎬 Video Tracking — auto-tracked on all <code>&lt;video&gt;</code> elements</h3>
+      <p>Play/pause/complete events fire automatically with <code>current_time</code> and <code>percent_watched</code>.</p>
+      <video controls preload="metadata"
+        src="https://www.w3schools.com/html/mov_bbb.mp4"
+        poster="https://via.placeholder.com/640x360/1a1d2e/6366f1?text=▶+Play+video">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+
+    <!-- Error Tracking -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>🐛 Error Tracking — auto-captured <code>js_error</code> events</h3>
+      <p>Runtime errors and unhandled rejections are captured automatically with stack traces.</p>
+      <div class="btn-group">
+        <button class="btn btn-danger" onclick="triggerRuntimeError()">Throw Runtime Error</button>
+        <button class="btn btn-danger" onclick="triggerUnhandledRejection()">Unhandled Promise Rejection</button>
+      </div>
+    </div>
+
+    <!-- Rage Click -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>😤 Rage Click Detection</h3>
+      <p>Click this button 3+ times rapidly in the same spot to trigger a <code>rage_click</code> event.</p>
+      <button class="btn btn-secondary" id="rage-btn" style="margin-top:.5rem">
+        Click me rapidly! (Rage Click Demo)
+      </button>
+    </div>
+
+    <!-- Copy Tracking -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>📋 Text Copy Tracking</h3>
+      <p>Select and copy any text on this page — a <code>text_copy</code> event fires with the copied snippet.</p>
+      <p style="background:#0d0f1a;padding:1rem;border-radius:8px;color:#a5b4fc;font-family:monospace;font-size:.85rem;margin-top:.5rem;user-select:text">
+        SI.identify('user_123', { plan: 'pro', name: 'Alice' }) — try copying this!
+      </p>
+    </div>
+
+    <!-- Custom Events -->
+    <div class="demo-box" style="margin-top:1rem">
+      <h3>⚡ Manual Custom Events — <code>SI.track()</code></h3>
+      <div class="btn-group">
+        <button class="btn btn-primary"   onclick="SI.track('upgrade_clicked', { plan: 'pro', source: 'demo' })">upgrade_clicked</button>
+        <button class="btn btn-secondary" onclick="SI.track('feature_viewed',  { feature: 'funnels' })">feature_viewed</button>
+        <button class="btn btn-success"   onclick="SI.track('onboarding_complete', { step: 3, skipped: false })">onboarding_complete</button>
+        <button class="btn btn-danger"    onclick="SI.flush(); showToast('Queue flushed to backend!')">Force Flush Queue</button>
+      </div>
     </div>
   </section>
 
@@ -286,103 +455,126 @@
 <!--  registering at http://localhost:5000/auth/register                       -->
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <script>
-  window.SI_PROJECT_KEY = 'REPLACE_WITH_YOUR_API_KEY';
+  // Read key from ?key=pk_live_xxx in URL, or fall back to the default project
+  (function () {
+    var urlKey = new URLSearchParams(window.location.search).get('key');
+    window.SI_PROJECT_KEY = urlKey || 'pk_live_a3f67a07c42f7b33781f6ea423ad79618396eae7b187a1de';
+  })();
 </script>
 <script src="http://localhost:5000/tracker.js"></script>
 
 <script>
-  // ── Intercept tracker to show events in the on-page log ─────────────────────
+  // Shorthand alias
+  var SI = window.StartupInsightAI;
+
+  // ── Toast ─────────────────────────────────────────────────────────────────────
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'toast';
+      t.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);' +
+        'background:#6366f1;color:#fff;padding:.6rem 1.4rem;border-radius:8px;' +
+        'font-size:.85rem;font-weight:600;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = '1';
+    clearTimeout(t._tid);
+    t._tid = setTimeout(function () { t.style.opacity = '0'; }, 2200);
+  }
+
+  // ── Live Event Log ────────────────────────────────────────────────────────────
   (function () {
-    var logEl    = document.getElementById('event-log');
-    var emptyEl  = document.getElementById('log-empty');
+    var logEl   = document.getElementById('event-log');
+    var emptyEl = document.getElementById('log-empty');
 
-    function logEvent(type, extra) {
+    var AUTO_EVENTS = new Set([
+      'page_view','click','scroll_depth','form_submit','session_start',
+      'page_exit','js_error','rage_click','outbound_click','form_start',
+      'form_abandon','element_viewed','video_play','video_pause','video_complete',
+      'text_copy','tab_hidden','tab_visible','identify','page_performance',
+      'goal_triggered',
+    ]);
+
+    function badgeClass(type) {
+      return AUTO_EVENTS.has(type) ? 'badge-' + type : 'badge-custom';
+    }
+
+    function logEvent(type, meta) {
       if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-
       var entry = document.createElement('div');
       entry.className = 'log-entry';
-
-      var badgeClass = 'badge-default';
-      if (['page_view','click','scroll_depth','form_submit','session_start'].includes(type)) {
-        badgeClass = 'badge-' + type;
-      } else {
-        badgeClass = 'badge-custom';
+      // For goal_triggered, show goal name + journey prominently
+      var detail = '';
+      if (type === 'goal_triggered' && meta) {
+        detail = '★ goal=' + (meta.goal_name || '') +
+          (meta.goal_value != null ? ' value=' + meta.goal_value : '') +
+          (meta.css_path ? ' path=' + meta.css_path.slice(0, 60) : '') +
+          (meta.journey ? ' journey=[' + meta.journey.map(function(s){return typeof s==='object'?s.v:s;}).join('→') + ']' : '');
+      } else if (type === 'click' && meta && meta.css_path) {
+        detail = (meta.text ? '"' + meta.text.slice(0, 40) + '" ' : '') + meta.css_path.slice(0, 80);
+      } else if (meta) {
+        detail = JSON.stringify(meta).slice(0, 140);
       }
-
-      var detail = extra?.metadata
-        ? JSON.stringify(extra.metadata).slice(0, 120)
-        : (extra?.element || '');
-
       entry.innerHTML =
-        '<span class="log-badge ' + badgeClass + '">' + type + '</span>' +
-        '<span class="log-text">' +
-          (detail ? detail + ' · ' : '') +
-          window.location.pathname +
-        '</span>';
-
+        '<span class="log-badge ' + badgeClass(type) + '">' + type + '</span>' +
+        '<span class="log-text">' + detail + '</span>';
       logEl.insertBefore(entry, logEl.firstChild);
-
-      // Keep log tidy
-      while (logEl.children.length > 50) {
-        logEl.removeChild(logEl.lastChild);
-      }
+      while (logEl.children.length > 60) logEl.removeChild(logEl.lastChild);
     }
 
-    // Patch the tracker's internal track function by wrapping the public API
-    // and monkey-patching after initialization
-    var _origTrack = window.StartupInsightAI?.track;
-    if (_origTrack) {
-      window.StartupInsightAI.track = function (name, meta) {
-        logEvent(name, { metadata: meta });
-        _origTrack(name, meta);
-      };
+    // Intercept public API track() to show custom events in the log
+    if (SI) {
+      var _orig = SI.track.bind(SI);
+      SI.track = function (name, meta) { logEvent(name, meta); _orig(name, meta); };
     }
 
-    // Also listen to DOM events to log auto-tracked ones
+    // Mirror auto-tracked events into the log via DOM events
     document.addEventListener('click', function (e) {
-      if (e.target.closest('#event-log') || e.target.closest('button[onclick*="flush"]')) return;
-      logEvent('click', { element: e.target.tagName, metadata: {} });
+      if (e.target.closest('#event-log')) return;
+      logEvent('click', { tag: e.target.tagName, x: e.clientX, y: e.clientY });
     }, { passive: true });
-
     document.addEventListener('submit', function (e) {
-      logEvent('form_submit', { metadata: { formId: e.target.id } });
+      logEvent('form_submit', { formId: e.target.id || null });
     }, { passive: true });
+    document.addEventListener('focusin', function (e) {
+      if (e.target && e.target.form) logEvent('form_start', { formId: e.target.form.id || null });
+    }, { passive: true });
+    document.addEventListener('copy', function () {
+      var sel = window.getSelection();
+      logEvent('text_copy', { text: sel ? sel.toString().trim().slice(0, 80) : '' });
+    }, { passive: true });
+    document.addEventListener('visibilitychange', function () {
+      logEvent(document.hidden ? 'tab_hidden' : 'tab_visible', {});
+    });
+    window.addEventListener('error', function (e) {
+      logEvent('js_error', { message: e.message, line: e.lineno });
+    });
+    window.addEventListener('pagehide', function () {
+      logEvent('page_exit', { time_on_page_ms: '…' });
+    });
 
-    // Log the initial events
-    logEvent('session_start', {});
-    logEvent('page_view',     {});
+    // Log the initial auto events
+    logEvent('session_start', { screen: window.screen.width + 'x' + window.screen.height });
+    logEvent('page_view',     { path: window.location.pathname });
 
-    // ── Scroll progress bar update ─────────────────────────────────────────────
-    var pctEl  = document.getElementById('scroll-pct');
-    var barEl  = document.getElementById('scroll-bar');
-    var milestones = { 25: document.getElementById('m25'), 50: document.getElementById('m50'), 75: document.getElementById('m75') };
+    // ── Scroll progress bar + milestone log ───────────────────────────────────
+    var pctEl      = document.getElementById('scroll-pct');
+    var barEl      = document.getElementById('scroll-bar');
+    var mNodes     = { 25: document.getElementById('m25'), 50: document.getElementById('m50'), 75: document.getElementById('m75') };
+    var firedDepth = {};
 
     window.addEventListener('scroll', function () {
-      var scrollTop  = window.pageYOffset || 0;
-      var docHeight  = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;
-      var pct        = docHeight <= 0 ? 100 : Math.min(100, Math.round((scrollTop / docHeight) * 100));
-
-      pctEl.textContent = pct + '%';
-      barEl.style.width = pct + '%';
-
+      var st  = window.pageYOffset || 0;
+      var dh  = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;
+      var pct = dh <= 0 ? 100 : Math.min(100, Math.round((st / dh) * 100));
+      if (pctEl) pctEl.textContent = pct + '%';
+      if (barEl) barEl.style.width = pct + '%';
       [25, 50, 75].forEach(function (m) {
         if (pct >= m) {
-          milestones[m].classList.add('hit');
-        }
-      });
-    }, { passive: true });
-
-    // ── Scroll depth event logging ─────────────────────────────────────────────
-    var fired = {};
-    window.addEventListener('scroll', function () {
-      var scrollTop  = window.pageYOffset || 0;
-      var docHeight  = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;
-      var pct        = docHeight <= 0 ? 100 : Math.min(100, Math.round((scrollTop / docHeight) * 100));
-
-      [25, 50, 75].forEach(function (m) {
-        if (pct >= m && !fired[m]) {
-          fired[m] = true;
-          logEvent('scroll_depth', { metadata: { depth_percent: m } });
+          if (mNodes[m]) mNodes[m].classList.add('hit');
+          if (!firedDepth[m]) { firedDepth[m] = true; logEvent('scroll_depth', { depth_percent: m }); }
         }
       });
     }, { passive: true });
@@ -391,23 +583,47 @@
   // ── Feature card clicks ────────────────────────────────────────────────────
   document.querySelectorAll('.card[data-feature]').forEach(function (card) {
     card.addEventListener('click', function () {
-      var feature = card.getAttribute('data-feature');
-      if (window.StartupInsightAI) {
-        window.StartupInsightAI.track('feature_viewed', { feature: feature });
-      }
+      SI && SI.track('feature_viewed', { feature: card.getAttribute('data-feature') });
     });
   });
 
-  // ── Custom event helper ────────────────────────────────────────────────────
-  function fireCustom(name, meta) {
-    if (window.StartupInsightAI) {
-      window.StartupInsightAI.track(name, meta);
+  // ── Identity demo ─────────────────────────────────────────────────────────
+  function demoIdentify(userId, traits) {
+    var statusEl = document.getElementById('identity-status');
+    if (!userId) {
+      localStorage.removeItem('si_user');
+      if (statusEl) statusEl.textContent = 'Identity cleared (localStorage removed).';
+      showToast('Identity cleared');
+      return;
     }
+    SI && SI.identify(userId, traits || {});
+    if (statusEl) statusEl.textContent = 'Identified as ' + userId + ' — all events now carry userId.';
+    showToast('Identified as ' + userId);
   }
 
+  // ── Error demos ───────────────────────────────────────────────────────────
+  function triggerRuntimeError() {
+    setTimeout(function () {
+      null.thisWillThrow(); // intentional runtime error
+    }, 0);
+  }
+  function triggerUnhandledRejection() {
+    Promise.reject(new Error('Demo: unhandled rejection from test site'));
+  }
+
+  // ── Log clear + journey display ───────────────────────────────────────────
   function clearLog() {
     var logEl = document.getElementById('event-log');
     logEl.innerHTML = '<div id="log-empty" style="color:var(--muted);text-align:center;padding:1.5rem 0;font-size:.85rem">Log cleared. Interact with the page…</div>';
+  }
+
+  function showJourney() {
+    var journey = SI ? SI.getJourney() : [];
+    if (!journey.length) { showToast('No journey steps yet — interact with the page!'); return; }
+    var text = journey.map(function (s) {
+      return '[' + s.t + '] ' + s.v;
+    }).join(' → ');
+    alert('Session Journey (' + journey.length + ' steps):\n\n' + text);
   }
 </script>
 

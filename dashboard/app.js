@@ -35,7 +35,9 @@ function fmt(n) {
   return String(n ?? 0);
 }
 function timeAgo(ts) {
-  const ms = Date.now() - Number(ts);
+  // ts is an ISO string (e.g. "2026-03-07T07:00:00.000Z") or a ms number
+  const ms = Date.now() - new Date(ts).getTime();
+  if (isNaN(ms) || ms < 0) return '—';
   if (ms < 60000)    return 'just now';
   if (ms < 3600000)  return Math.floor(ms / 60000)    + 'm ago';
   if (ms < 86400000) return Math.floor(ms / 3600000)  + 'h ago';
@@ -52,7 +54,10 @@ function esc(s) {
   return d.innerHTML;
 }
 function badgeCls(ev) {
-  const known=['page_view','click','scroll_depth','form_submit','session_start'];
+  const known=['page_view','click','scroll_depth','form_submit','session_start',
+    'page_exit','js_error','rage_click','outbound_click','form_start','form_abandon',
+    'element_viewed','video_play','video_pause','video_complete','text_copy',
+    'tab_hidden','tab_visible','page_performance','goal_triggered'];
   return 'badge ' + (known.includes(ev) ? 'badge-'+ev : 'badge-default');
 }
 function planBadge(plan) {
@@ -194,10 +199,18 @@ async function boot() {
 
 /* ──────────────────────── Customer Navigation ────────────────────── */
 function custNav(page) {
-  ['analytics','projects'].forEach(p=>{
+  const pages = ['analytics','goals','funnels','heatmap','sessions','retention','ab','projects'];
+  pages.forEach(p=>{
     document.getElementById('sb-'+p)?.classList.toggle('active', p===page);
   });
+  clearInterval(_refreshTimer);
   if(page==='analytics') loadAnalytics();
+  else if(page==='goals')     loadGoals();
+  else if(page==='funnels')   loadFunnels();
+  else if(page==='heatmap')   loadHeatmap();
+  else if(page==='sessions')  loadSessions();
+  else if(page==='retention') loadRetention();
+  else if(page==='ab')        loadAb();
   else loadProjects();
 }
 
@@ -532,10 +545,9 @@ function buildTimeline(events) {
     buckets[d.toISOString().slice(0,10)]=0;
   }
   events.forEach(ev=>{
-    const ms = Number(ev.timestamp);
-    if(!ms || isNaN(ms)) return;
-    const d = new Date(ms);
-    if(isNaN(d)) return;
+    // timestamp is stored as an ISO string; new Date() handles both ISO and ms
+    const d = new Date(ev.timestamp);
+    if(isNaN(d.getTime())) return;
     const k = d.toISOString().slice(0,10);
     if(k in buckets) buckets[k]++;
   });
@@ -607,6 +619,552 @@ function renderPagesChart(topPages) {
       },
     },
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   GOALS
+   ════════════════════════════════════════════════════════════════ */
+async function loadGoals() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const data = await api(`/goals?projectId=${_analyticsProjectId}`);
+    renderGoalsPage(data.goals||[]);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderGoalsPage(goals) {
+  const rows = goals.map(g=>`
+    <div class="proj-card" style="gap:.5rem">
+      <div>
+        <div class="proj-name">${esc(g.name)}</div>
+        <div class="proj-date">Event: <code>${esc(g.event_name)}</code>
+          ${g.conditions && Object.keys(g.conditions).length
+            ? ' · filter: ' + esc(JSON.stringify(g.conditions))
+            : ''}</div>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="loadGoalStats('${g.id}','${esc(g.name)}')">📈 Stats</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteGoal('${g.id}')">🗑 Delete</button>
+      </div>
+    </div>`).join('');
+
+  setMain('cust', `
+    <div class="page-content">
+      <div class="page-hdr">
+        <h1 class="page-title">Goals</h1>
+        <button class="btn btn-solid btn-sm" onclick="showNewGoalModal()">+ New Goal</button>
+      </div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
+        Goals track conversion events. Tag any element with <code>data-si-goal="name"</code> in your tracker.
+      </p>
+      ${goals.length===0
+        ? `<div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🎯</div><h3>No goals yet</h3><p>Create a goal to track conversions.</p></div>`
+        : `<div class="proj-grid">${rows}</div>`}
+    </div>`);
+}
+
+function showNewGoalModal() {
+  openModal('New Goal', `
+    <div id="ng-msg"></div>
+    <div class="field"><label>Goal Name</label>
+      <input type="text" id="ng-name" placeholder="e.g. Upgrade Clicked" maxlength="80" /></div>
+    <div class="field"><label>Event Name</label>
+      <input type="text" id="ng-event" value="goal_triggered" maxlength="80" /></div>
+    <div class="field"><label>Filter: goal_name (optional)</label>
+      <input type="text" id="ng-goalname" placeholder="e.g. upgrade_clicked" maxlength="80" /></div>
+    <button class="btn btn-solid" onclick="createGoal()">Create Goal</button>
+  `);
+  setTimeout(()=>document.getElementById('ng-name')?.focus(),50);
+}
+
+async function createGoal() {
+  const name      = (document.getElementById('ng-name')?.value||'').trim();
+  const eventName = (document.getElementById('ng-event')?.value||'goal_triggered').trim();
+  const goalName  = (document.getElementById('ng-goalname')?.value||'').trim();
+  if(!name) { document.getElementById('ng-msg').innerHTML='<div class="error-msg">Goal name is required.</div>'; return; }
+  try {
+    const conditions = goalName ? { goal_name: goalName } : {};
+    await api('/goals',{method:'POST',body:{ projectId:_analyticsProjectId, name, eventName, conditions }});
+    closeModal();
+    loadGoals();
+    showToast('Goal created!');
+  } catch(err) {
+    document.getElementById('ng-msg').innerHTML=`<div class="error-msg">${esc(err.message)}</div>`;
+  }
+}
+
+async function deleteGoal(id) {
+  if(!confirm('Delete this goal?')) return;
+  try { await api('/goals/'+id,{method:'DELETE'}); loadGoals(); showToast('Deleted.'); }
+  catch(err) { showToast('Error: '+err.message); }
+}
+
+async function loadGoalStats(id, name) {
+  openModal('Goal Stats: '+name, `<div id="gs-wrap" style="min-height:120px">${loader()}</div>`);
+  try {
+    const d = await api(`/goals/${id}/stats?days=30`);
+    const dailyEntries = Object.entries(d.daily||{}).sort(([a],[b])=>a>b?1:-1);
+    const rateColor = d.conversionRate>5 ? 'var(--green)' : d.conversionRate>1 ? 'var(--amber)' : 'var(--red)';
+    document.getElementById('gs-wrap').innerHTML = `
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:.75rem">
+        <div class="kpi-card" style="--c:#6366f1;padding:.75rem"><div class="kpi-label" style="font-size:.65rem">Conversions</div><div class="kpi-val" style="font-size:1.4rem">${fmt(d.total)}</div></div>
+        <div class="kpi-card" style="--c:#22c55e;padding:.75rem"><div class="kpi-label" style="font-size:.65rem">Unique Sessions</div><div class="kpi-val" style="font-size:1.4rem">${fmt(d.uniqueSessions)}</div></div>
+        <div class="kpi-card" style="--c:${rateColor};padding:.75rem"><div class="kpi-label" style="font-size:.65rem">Conv. Rate</div><div class="kpi-val" style="font-size:1.4rem" style="color:${rateColor}">${d.conversionRate}%</div></div>
+      </div>
+      <div style="font-size:.75rem;color:var(--muted);margin-bottom:.5rem">Daily conversions (last 30 days)</div>
+      <div style="display:flex;align-items:flex-end;gap:3px;height:60px;overflow-x:auto">
+        ${dailyEntries.map(([day,count])=>{
+          const maxC = Math.max(...Object.values(d.daily),1);
+          const h = Math.round((count/maxC)*54)+6;
+          return `<div title="${day}: ${count}" style="flex:1;min-width:8px;height:${h}px;background:#6366f1;border-radius:2px 2px 0 0;opacity:.85"></div>`;
+        }).join('')}
+      </div>`;
+  } catch(err) {
+    document.getElementById('gs-wrap').innerHTML=`<div style="color:var(--red)">${esc(err.message)}</div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   FUNNELS
+   ════════════════════════════════════════════════════════════════ */
+async function loadFunnels() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const data = await api(`/funnels?projectId=${_analyticsProjectId}`);
+    renderFunnelsPage(data.funnels||[]);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderFunnelsPage(funnels) {
+  const rows = funnels.map(f=>`
+    <div class="proj-card" style="gap:.5rem">
+      <div>
+        <div class="proj-name">${esc(f.name)}</div>
+        <div class="proj-date">${f.steps.length} steps: ${f.steps.map(s=>esc(s)).join(' → ')}</div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="showFunnelResults('${f.id}','${esc(f.name)}')">📊 Results</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteFunnel('${f.id}')">🗑 Delete</button>
+      </div>
+    </div>`).join('');
+
+  setMain('cust', `
+    <div class="page-content">
+      <div class="page-hdr">
+        <h1 class="page-title">Funnels</h1>
+        <button class="btn btn-solid btn-sm" onclick="showNewFunnelModal()">+ New Funnel</button>
+      </div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
+        Funnels show where users drop off in a sequence of pages. Steps = page pathnames (e.g. <code>/pricing</code>).
+      </p>
+      ${funnels.length===0
+        ? `<div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🌊</div><h3>No funnels yet</h3><p>Create a funnel to measure drop-off.</p></div>`
+        : `<div class="proj-grid">${rows}</div>`}
+    </div>`);
+}
+
+function showNewFunnelModal() {
+  openModal('New Funnel', `
+    <div id="nf-msg"></div>
+    <div class="field"><label>Funnel Name</label>
+      <input type="text" id="nf-name" placeholder="e.g. Signup Flow" maxlength="80" /></div>
+    <div class="field"><label>Steps (one page path per line)</label>
+      <textarea id="nf-steps" rows="5" placeholder="/\n/pricing\n/signup\n/thank-you"
+        style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.5rem;font-family:monospace;font-size:.82rem;resize:vertical"></textarea></div>
+    <button class="btn btn-solid" onclick="createFunnel()">Create Funnel</button>
+  `);
+  setTimeout(()=>document.getElementById('nf-name')?.focus(),50);
+}
+
+async function createFunnel() {
+  const name  = (document.getElementById('nf-name')?.value||'').trim();
+  const raw   = (document.getElementById('nf-steps')?.value||'');
+  const steps = raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  const msg = document.getElementById('nf-msg');
+  if(!name) { msg.innerHTML='<div class="error-msg">Name is required.</div>'; return; }
+  if(steps.length<2) { msg.innerHTML='<div class="error-msg">At least 2 steps are required.</div>'; return; }
+  try {
+    await api('/funnels',{method:'POST',body:{ projectId:_analyticsProjectId, name, steps }});
+    closeModal();
+    loadFunnels();
+    showToast('Funnel created!');
+  } catch(err) {
+    msg.innerHTML=`<div class="error-msg">${esc(err.message)}</div>`;
+  }
+}
+
+async function deleteFunnel(id) {
+  if(!confirm('Delete this funnel?')) return;
+  try { await api('/funnels/'+id,{method:'DELETE'}); loadFunnels(); showToast('Deleted.'); }
+  catch(err) { showToast('Error: '+err.message); }
+}
+
+async function showFunnelResults(id, name) {
+  openModal('Funnel: '+name, `<div id="fr-wrap" style="min-height:140px">${loader()}</div>`);
+  try {
+    const d = await api(`/funnels/${id}/results?days=30`);
+    const steps = d.steps||[];
+    const maxSessions = steps.length ? steps[0].sessions : 1;
+    document.getElementById('fr-wrap').innerHTML = `
+      <div style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem">
+        ${d.totalSessionsInPeriod} total sessions in period · Last 30 days
+      </div>
+      ${steps.map((s,i)=>{
+        const w = maxSessions>0 ? Math.round((s.sessions/maxSessions)*100) : 0;
+        const col = i===0 ? '#6366f1' : s.dropOffRate>50 ? '#ef4444' : s.dropOffRate>25 ? '#f59e0b' : '#22c55e';
+        return `
+          <div style="margin-bottom:.75rem">
+            <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:.25rem">
+              <span style="color:var(--text)">${i+1}. ${esc(s.step)}</span>
+              <span style="color:var(--muted)">${s.sessions} sessions
+                ${i>0 ? '<span style="color:'+col+'"> (−'+s.dropOffRate+'%)</span>' : ''}
+              </span>
+            </div>
+            <div style="height:10px;background:var(--surface);border-radius:5px;overflow:hidden">
+              <div style="height:100%;width:${w}%;background:${col};border-radius:5px;transition:width .5s"></div>
+            </div>
+          </div>`;
+      }).join('')}`;
+  } catch(err) {
+    document.getElementById('fr-wrap').innerHTML=`<div style="color:var(--red)">${esc(err.message)}</div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   HEATMAP
+   ════════════════════════════════════════════════════════════════ */
+let _heatmapPage = null;
+
+async function loadHeatmap() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const data = await api(`/heatmap/pages?projectId=${_analyticsProjectId}&days=30`);
+    renderHeatmapPage(data.pages||[]);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderHeatmapPage(pages) {
+  const pageOpts = pages.map(p=>`<option value="${esc(p.page)}">${esc(p.page)} (${p.clicks})</option>`).join('');
+  setMain('cust', `
+    <div class="page-content">
+      <div class="page-hdr">
+        <h1 class="page-title">Heatmap</h1>
+      </div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
+        Click heatmap normalised to 1280×800. Darker = more clicks.
+      </p>
+      ${pages.length===0
+        ? `<div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🔥</div><h3>No click data yet</h3><p>Clicks will appear here once tracked.</p></div>`
+        : `
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+          <select id="hm-page-sel" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .75rem;font-size:.83rem;outline:none"
+            onchange="showHeatmapCanvas(this.value)">${pageOpts}</select>
+          <button class="btn btn-ghost btn-sm" onclick="showHeatmapCanvas(document.getElementById('hm-page-sel').value)">↺ Reload</button>
+        </div>
+        <canvas id="hm-canvas" width="1280" height="800"
+          style="width:100%;max-width:960px;border:1px solid var(--border);border-radius:8px;background:#0a0c14"></canvas>`}
+    </div>`);
+
+  if(pages.length>0) {
+    showHeatmapCanvas(pages[0].page);
+  }
+}
+
+async function showHeatmapCanvas(page) {
+  const canvas = document.getElementById('hm-canvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle='#0a0c14';
+  ctx.fillRect(0,0,1280,800);
+  ctx.fillStyle='rgba(255,255,255,.3)';
+  ctx.font='14px monospace';
+  ctx.fillText('Loading…',590,400);
+
+  try {
+    const d = await api(`/heatmap?projectId=${_analyticsProjectId}&page=${encodeURIComponent(page)}&days=30`);
+    ctx.fillStyle='#0a0c14';
+    ctx.fillRect(0,0,1280,800);
+
+    // Draw a faint grid
+    ctx.strokeStyle='rgba(255,255,255,.04)';
+    for(let x=0;x<1280;x+=128){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,800);ctx.stroke(); }
+    for(let y=0;y<800;y+=80){  ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1280,y);ctx.stroke(); }
+
+    const pts = d.points||[];
+    if(!pts.length) {
+      ctx.fillStyle='rgba(255,255,255,.4)';
+      ctx.font='16px monospace';
+      ctx.fillText('No click data for this page.',480,400);
+      return;
+    }
+    const maxCount = Math.max(...pts.map(p=>p.count));
+
+    for(const {nx,ny,count} of pts) {
+      const intensity = count/maxCount;
+      const r = Math.round(4+intensity*24);
+      // Color: cool→warm
+      const red   = Math.round(60 + 195*intensity);
+      const green = Math.round(60 * (1-intensity));
+      const blue  = Math.round(200 * (1-intensity));
+      const grad = ctx.createRadialGradient(nx,ny,0,nx,ny,r);
+      grad.addColorStop(0, `rgba(${red},${green},${blue},${0.4+0.5*intensity})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle=grad;
+      ctx.beginPath();
+      ctx.arc(nx,ny,r,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // Legend
+    ctx.fillStyle='rgba(255,255,255,.5)';
+    ctx.font='11px sans-serif';
+    ctx.fillText(`${d.total} clicks on ${esc(page)}`,10,790);
+  } catch(err) {
+    ctx.fillStyle='rgba(255,80,80,.8)';
+    ctx.font='14px monospace';
+    ctx.fillText(err.message,40,400);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SESSION RECORDINGS (timeline)
+   ════════════════════════════════════════════════════════════════ */
+async function loadSessions() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const data = await api(`/events?projectId=${_analyticsProjectId}&limit=500`);
+    const allEvents = data.events||[];
+    // Group by session, pick most recent 30
+    const sessMap = {};
+    for(const ev of allEvents) {
+      if(!sessMap[ev.session_id]) sessMap[ev.session_id]={ session_id:ev.session_id, events:[], started_at:ev.timestamp };
+      sessMap[ev.session_id].events.push(ev);
+      if(ev.timestamp < sessMap[ev.session_id].started_at) sessMap[ev.session_id].started_at=ev.timestamp;
+    }
+    const sessions = Object.values(sessMap)
+      .sort((a,b)=>(b.started_at>a.started_at?1:-1))
+      .slice(0,30);
+    renderSessionsPage(sessions);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderSessionsPage(sessions) {
+  if(!sessions.length) {
+    setMain('cust',`<div class="page-content"><div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🎬</div><h3>No sessions yet</h3></div></div>`);
+    return;
+  }
+  const rows = sessions.map(s=>`
+    <tr style="cursor:pointer" onclick="showSessionModal('${esc(s.session_id)}')">
+      <td style="font-family:monospace;font-size:.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(s.session_id)}</td>
+      <td>${s.events.length}</td>
+      <td>${timeAgo(s.started_at)}</td>
+      <td style="color:var(--muted);font-size:.75rem">
+        ${[...new Set(s.events.map(e=>e.event))].slice(0,4).join(', ')}
+      </td>
+    </tr>`).join('');
+
+  setMain('cust',`
+    <div class="page-content">
+      <div class="page-hdr"><h1 class="page-title">Session Recordings</h1>
+        <button class="btn btn-ghost btn-sm" onclick="loadSessions()">↺ Refresh</button>
+      </div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">Click any session to view its full event timeline.</p>
+      <div class="table-card">
+        <div class="tbl-scroll"><table>
+          <thead><tr><th>Session ID</th><th>Events</th><th>Started</th><th>Event Types</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>
+    </div>`);
+}
+
+async function showSessionModal(sessionId) {
+  openModal('Session: '+sessionId.slice(0,16)+'…', `<div id="sr-wrap" style="max-height:400px;overflow-y:auto">${loader()}</div>`);
+  try {
+    const d = await api(`/events/session/${encodeURIComponent(sessionId)}?projectId=${_analyticsProjectId}`);
+    const evs = d.events||[];
+    const startMs = evs.length ? new Date(evs[0].timestamp).getTime() : 0;
+    const items = evs.map(ev=>{
+      const relSec = startMs ? (new Date(ev.timestamp).getTime() - startMs)/1000 : 0;
+      const meta = typeof ev.metadata==='object' ? ev.metadata : {};
+      const detail = ev.event==='click'
+        ? (meta.text?`"${esc(meta.text.slice(0,40))}" `:'')+(meta.css_path?`<span style="color:var(--muted);font-size:.7rem">${esc(meta.css_path.slice(0,60))}</span>`:'')
+        : ev.event==='page_view' ? `<strong>${esc(meta.page||ev.page||'')}</strong>`
+        : ev.event==='goal_triggered' ? `<span style="color:#d8b4fe;font-weight:600">${esc(meta.goal_name||'')}</span>`
+        : esc(ev.page||'');
+      return `
+        <div style="display:flex;gap:.6rem;align-items:baseline;padding:.3rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--muted);font-size:.7rem;min-width:50px">+${relSec.toFixed(1)}s</span>
+          <span class="${badgeCls(ev.event)}">${esc(ev.event)}</span>
+          <span style="font-size:.78rem">${detail}</span>
+        </div>`;
+    }).join('');
+    document.getElementById('sr-wrap').innerHTML = items||'<div style="color:var(--muted)">No events.</div>';
+  } catch(err) {
+    document.getElementById('sr-wrap').innerHTML=`<div style="color:var(--red)">${esc(err.message)}</div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   RETENTION
+   ════════════════════════════════════════════════════════════════ */
+async function loadRetention() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const d = await api(`/events/retention?projectId=${_analyticsProjectId}&cohorts=8`);
+    renderRetentionPage(d.cohorts||[]);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderRetentionPage(cohorts) {
+  if(!cohorts.length) {
+    setMain('cust',`<div class="page-content"><div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">📅</div><h3>No data yet</h3></div></div>`);
+    return;
+  }
+  const maxWeeks = Math.max(...cohorts.map(c=>c.retention.length));
+
+  // Header: Week +0, +1, +2, ...
+  const hdrCols = Array.from({length:maxWeeks},(_,i)=>`<th style="min-width:52px">Wk +${i}</th>`).join('');
+
+  const rows = cohorts.map(c=>{
+    const cells = Array.from({length:maxWeeks},(_,i)=>{
+      if(i>=c.retention.length) return '<td></td>';
+      const pct = c.retention[i];
+      const bg  = i===0 ? '#3730a3'
+        : pct>=60 ? '#166534'
+        : pct>=30 ? '#92400e'
+        : '#7f1d1d';
+      return `<td style="background:${bg};color:#fff;text-align:center;border-radius:4px;font-size:.78rem">${pct}%</td>`;
+    }).join('');
+    return `<tr>
+      <td style="white-space:nowrap;font-size:.78rem">${esc(c.week)}</td>
+      <td style="text-align:center;color:var(--cyan)">${c.newSessions}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  setMain('cust',`
+    <div class="page-content">
+      <div class="page-hdr"><h1 class="page-title">Retention</h1>
+        <button class="btn btn-ghost btn-sm" onclick="loadRetention()">↺ Refresh</button>
+      </div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
+        Weekly cohort retention. Each row = sessions first seen in that week. Columns = % still active in subsequent weeks.
+      </p>
+      <div class="table-card">
+        <div class="tbl-scroll" style="overflow-x:auto"><table>
+          <thead><tr>
+            <th>Cohort Week</th><th style="min-width:60px">New Sessions</th>${hdrCols}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>
+    </div>`);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   A/B TESTS
+   ════════════════════════════════════════════════════════════════ */
+async function loadAb() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const d = await api(`/events/ab?projectId=${_analyticsProjectId}&property=variant&days=30`);
+    renderAbPage(d);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+async function runAbQuery() {
+  const prop   = (document.getElementById('ab-prop')?.value||'variant').trim();
+  const goal   = (document.getElementById('ab-goal')?.value||'').trim();
+  const days   = (document.getElementById('ab-days')?.value||'30').trim();
+  const wrap   = document.getElementById('ab-results');
+  if(wrap) wrap.innerHTML = loader();
+  try {
+    const params = `projectId=${_analyticsProjectId}&property=${encodeURIComponent(prop)}&days=${days}`
+      + (goal ? `&goalName=${encodeURIComponent(goal)}` : '');
+    const d = await api(`/events/ab?${params}`);
+    if(wrap) wrap.innerHTML = renderAbTable(d.variants||[]);
+  } catch(err) {
+    if(wrap) wrap.innerHTML=`<div style="color:var(--red);padding:1rem">${esc(err.message)}</div>`;
+  }
+}
+
+function renderAbPage(d) {
+  setMain('cust',`
+    <div class="page-content">
+      <div class="page-hdr"><h1 class="page-title">A/B Tests</h1></div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
+        Set a variant using <code>SI.setVariant('variant','control')</code> in your tracker.
+        Conversions are counted from <code>goal_triggered</code> events (or any event you choose).
+      </p>
+      <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+        <input id="ab-prop"  type="text" value="variant" placeholder="metadata property"
+          style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .6rem;font-size:.82rem;outline:none;width:140px" />
+        <input id="ab-goal"  type="text" placeholder="goal_name filter (opt.)"
+          style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .6rem;font-size:.82rem;outline:none;width:200px" />
+        <select id="ab-days" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .6rem;font-size:.82rem;outline:none">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+        <button class="btn btn-solid btn-sm" onclick="runAbQuery()">Run</button>
+      </div>
+      <div id="ab-results">${renderAbTable(d.variants||[])}</div>
+    </div>`);
+}
+
+function renderAbTable(variants) {
+  if(!variants.length) return `<div class="empty-box" style="margin-top:0"><div style="font-size:2rem;margin-bottom:.5rem">🧪</div><h3>No variant data</h3><p>Use <code>SI.setVariant('variant','control')</code> in your tracker, then interact with goals.</p></div>`;
+  const maxRate = Math.max(...variants.map(v=>v.rate),0.01);
+  const rows = variants.map(v=>{
+    const w   = Math.round((v.rate/maxRate)*100);
+    const col = v.rate===Math.max(...variants.map(x=>x.rate)) ? '#22c55e' : '#6366f1';
+    return `
+      <tr>
+        <td><strong>${esc(v.variant)}</strong></td>
+        <td style="text-align:center">${fmt(v.sessions)}</td>
+        <td style="text-align:center">${fmt(v.conversions)}</td>
+        <td style="min-width:200px">
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <div style="flex:1;height:8px;background:var(--surface);border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:${w}%;background:${col};border-radius:4px"></div>
+            </div>
+            <span style="font-size:.82rem;color:${col};min-width:44px">${v.rate}%</span>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+  return `
+    <div class="table-card">
+      <div class="tbl-scroll"><table>
+        <thead><tr><th>Variant</th><th style="text-align:center">Sessions</th><th style="text-align:center">Conversions</th><th>Conv. Rate</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Shared helper: ensure a project is selected
+   ════════════════════════════════════════════════════════════════ */
+async function _ensureProject() {
+  try {
+    const data = await api('/projects');
+    _customerProjects = data.projects||[];
+    if(!_customerProjects.length) {
+      setMain('cust',`<div class="page-content"><div class="empty-box"><h3>No projects yet</h3><p><button class="btn btn-solid btn-sm" onclick="custNav('projects')">Create a Project</button></p></div></div>`);
+      return;
+    }
+    const saved = localStorage.getItem('ts_project');
+    const pick  = _customerProjects.find(p=>p.id===saved)||_customerProjects[0];
+    _analyticsProjectId = pick.id;
+  } catch(err) { handleFetchError('cust', err); }
 }
 
 /* ──────────────────────── Admin Navigation ───────────────────────── */

@@ -58,6 +58,9 @@ app.use('/auth',     require('./routes/auth'));
 app.use('/projects', require('./routes/projects'));
 app.use('/track',    require('./routes/track'));
 app.use('/events',   require('./routes/events'));
+app.use('/goals',    require('./routes/goals'));
+app.use('/funnels',  require('./routes/funnels'));
+app.use('/heatmap',  require('./routes/heatmap'));
 app.use('/admin',    require('./routes/admin'));
 
 // ── Health check ──────────────────────────────────────────────────────────────

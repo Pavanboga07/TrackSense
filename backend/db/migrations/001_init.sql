@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id  TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   session_id  TEXT    NOT NULL,
-  event       TEXT    NOT NULL,             -- page_view | click | scroll_depth | form_submit | custom…
+  user_id     TEXT,                         -- from SI.identify() — null for anonymous
+  event       TEXT    NOT NULL,             -- page_view | click | scroll_depth | js_error | custom…
   page        TEXT,                         -- URL pathname, e.g. /pricing
   url         TEXT,                         -- full URL
   element     TEXT,                         -- tag name for click events
@@ -48,5 +49,6 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_project_time ON events (project_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_events_session       ON events (project_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_events_type          ON events (project_id, event);
+CREATE INDEX IF NOT EXISTS idx_events_user          ON events (project_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_user        ON projects (user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_api_key     ON projects (api_key);

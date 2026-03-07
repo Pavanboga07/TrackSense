@@ -4,6 +4,7 @@
 const ALLOWED_FIELDS = new Set([
   'projectKey',
   'sessionId',
+  'userId',     // from SI.identify()
   'event',
   'page',
   'url',
@@ -15,12 +16,14 @@ const ALLOWED_FIELDS = new Set([
 const REQUIRED_FIELDS = ['sessionId', 'event', 'timestamp'];
 
 // Max events in a single batched POST request
-const MAX_BATCH_SIZE = 50;
+// Raised to 100 — richer auto-tracking (rage_click, video, errors) can generate more events
+const MAX_BATCH_SIZE = 100;
 
 // Field length caps — prevent abuse / oversized payloads
 const FIELD_LIMITS = {
   event:     100,
   sessionId: 128,
+  userId:    256,
   page:      500,
   url:       2000,
   element:   100,
