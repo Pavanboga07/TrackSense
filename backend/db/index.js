@@ -29,6 +29,8 @@ async function init() {
     'utf8'
   );
   _db.exec(migSQL);
+  // Migrate existing DBs — silently adds columns that didn't exist yet
+  try { _db.run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer'"); } catch (_) {}
   persist(); // write initial schema to disk
 
   console.log(`[DB] sql.js initialized → ${DB_PATH}`);

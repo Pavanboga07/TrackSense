@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   password   TEXT    NOT NULL,              -- bcrypt hash
   name       TEXT    NOT NULL DEFAULT '',
   plan       TEXT    NOT NULL DEFAULT 'free', -- free | pro | enterprise
+  role       TEXT    NOT NULL DEFAULT 'customer', -- customer | admin
   created_at TEXT    NOT NULL
 );
 

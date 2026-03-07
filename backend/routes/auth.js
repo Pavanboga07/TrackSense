@@ -8,7 +8,7 @@ const authService     = require('../services/authService');
 
 // ── POST /auth/register ───────────────────────────────────────────────────────
 router.post('/register', authLimiter, async (req, res) => {
-  const { email, password, name } = req.body || {};
+  const { email, password, name, adminKey } = req.body || {};
 
   if (!email || typeof email !== 'string') {
     return res.status(400).json({ error: 'Valid email is required' });
@@ -18,7 +18,7 @@ router.post('/register', authLimiter, async (req, res) => {
   }
 
   try {
-    const user = await authService.register({ email, password, name });
+    const user = await authService.register({ email, password, name, adminKey });
     res.status(201).json({ user });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });

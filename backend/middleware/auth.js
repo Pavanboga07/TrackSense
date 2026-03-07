@@ -22,7 +22,7 @@ function authMiddleware(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: payload.sub, email: payload.email };
+    req.user = { id: payload.sub, email: payload.email, role: payload.role || 'customer' };
     next();
   } catch (err) {
     // Distinguish expired vs tampered — same 401, different message

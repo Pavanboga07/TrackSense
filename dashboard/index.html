@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrackSense Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════ AUTH VIEW ══════════════════════════ -->
+<div id="v-auth">
+  <div class="auth-card">
+    <div class="auth-logo">Track<span>Sense</span></div>
+    <div class="auth-tagline">Real analytics pipeline for real websites.</div>
+
+    <div class="auth-tabs" id="auth-tabs">
+      <button class="auth-tab active" onclick="authTab('login')">Sign In</button>
+      <button class="auth-tab"        onclick="authTab('register')">Register</button>
+      <!-- Admin tab only shown when URL contains ?admin -->
+    </div>
+
+    <div id="auth-msg"></div>
+
+    <!-- Login -->
+    <form id="f-login" onsubmit="doLogin(event)">
+      <div class="field"><label>Email</label>
+        <input type="email" id="l-email" placeholder="you@company.com" autocomplete="email" required /></div>
+      <div class="field"><label>Password</label>
+        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" required /></div>
+      <button class="btn btn-primary" type="submit" id="l-btn">Sign In</button>
+    </form>
+
+    <!-- Register (customer) -->
+    <form id="f-register" style="display:none" onsubmit="doRegister(event)">
+      <div class="field"><label>Email</label>
+        <input type="email" id="r-email" placeholder="you@company.com" autocomplete="email" required /></div>
+      <div class="field"><label>Password <small style="text-transform:none;letter-spacing:0;font-size:.7rem">(min 8 chars)</small></label>
+        <input type="password" id="r-pass" placeholder="Choose a strong password" autocomplete="new-password" required minlength="8" /></div>
+      <button class="btn btn-primary" type="submit" id="r-btn">Create Account</button>
+    </form>
+
+    <!-- Admin Registration (shown only via ?admin) -->
+    <form id="f-admin-reg" style="display:none" onsubmit="doAdminRegister(event)">
+      <div class="field"><label>Email</label>
+        <input type="email" id="ar-email" placeholder="admin@company.com" autocomplete="email" required /></div>
+      <div class="field"><label>Password</label>
+        <input type="password" id="ar-pass" placeholder="••••••••" autocomplete="new-password" required minlength="8" /></div>
+      <div class="field"><label>Admin Setup Key</label>
+        <input type="password" id="ar-key" placeholder="Secret key from .env" required /></div>
+      <button class="btn btn-primary" type="submit" id="ar-btn">Create Admin Account</button>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════════════════════ CUSTOMER VIEW ══════════════════════ -->
+<div id="v-customer">
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sb-logo">Track<span>Sense</span>
+        <div class="sb-logo-sub">Customer Portal</div>
+      </div>
+      <div class="sb-nav">
+        <div class="sb-section">Analytics</div>
+        <button class="sb-item active" id="sb-analytics" onclick="custNav('analytics')">
+          <span class="sb-icon">📊</span> Dashboard
+        </button>
+        <div class="sb-section">Settings</div>
+        <button class="sb-item" id="sb-projects" onclick="custNav('projects')">
+          <span class="sb-icon">🗂️</span> My Projects
+        </button>
+      </div>
+      <div class="sb-footer">
+        <div class="sb-email" id="cust-email-label">—</div>
+        <div class="sb-role role-customer">● Customer</div>
+        <button class="btn btn-ghost btn-sm" onclick="logout()" style="margin-top:.2rem">Sign Out</button>
+      </div>
+    </aside>
+    <div class="app-main" id="cust-main"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ ADMIN VIEW ════════════════════════ -->
+<div id="v-admin">
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sb-logo">Track<span>Sense</span>
+        <div class="sb-logo-sub">Admin Panel</div>
+      </div>
+      <div class="sb-nav">
+        <div class="sb-section">Platform</div>
+        <button class="sb-item active" id="sb-admin-overview"   onclick="adminNav('overview')">
+          <span class="sb-icon">⚡</span> Overview
+        </button>
+        <button class="sb-item"        id="sb-admin-customers" onclick="adminNav('customers')">
+          <span class="sb-icon">👥</span> Customers
+        </button>
+      </div>
+      <div class="sb-footer">
+        <div class="sb-email" id="admin-email-label">—</div>
+        <div class="sb-role role-admin">★ Admin</div>
+        <button class="btn btn-ghost btn-sm" onclick="logout()" style="margin-top:.2rem">Sign Out</button>
+      </div>
+    </aside>
+    <div class="app-main" id="admin-main"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ MODAL ════════════════════════════ -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="closeModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-hdr">
+      <h3 id="modal-title">—</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ══════════════════════════ SCRIPT ══════════════════════════════ -->
+<script src="app.js"></script>
+</body>
+</html>

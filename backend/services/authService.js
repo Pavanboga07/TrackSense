@@ -11,7 +11,7 @@ const SALT_ROUNDS = 12;
  * Register a new user.
  * Throws with .status set for HTTP responses.
  */
-async function register({ email, password, name }) {
+async function register({ email, password, name, adminKey }) {
   const normalizedEmail = email.toLowerCase().trim();
 
   const existing = db.get('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
@@ -20,17 +20,22 @@ async function register({ email, password, name }) {
     throw Object.assign(new Error('Email already registered'), { status: 409 });
   }
 
+  // Only grant admin role when the correct ADMIN_SETUP_KEY is supplied
+  const role = (adminKey && process.env.ADMIN_SETUP_KEY && adminKey === process.env.ADMIN_SETUP_KEY)
+    ? 'admin'
+    : 'customer';
+
   const hash = await bcrypt.hash(password, SALT_ROUNDS);
   const id   = uuidv4();
   const now  = new Date().toISOString();
 
   db.run(
-    'INSERT INTO users (id, email, password, name, plan, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, normalizedEmail, hash, (name || '').trim(), 'free', now]
+    'INSERT INTO users (id, email, password, name, plan, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, normalizedEmail, hash, (name || '').trim(), 'free', role, now]
   );
   db.persist();
 
-  return { id, email: normalizedEmail, name: (name || '').trim(), plan: 'free', created_at: now };
+  return { id, email: normalizedEmail, name: (name || '').trim(), plan: 'free', role, created_at: now };
 }
 
 /**
@@ -51,14 +56,14 @@ async function login({ email, password }) {
   }
 
   const token = jwt.sign(
-    { sub: user.id, email: user.email },
+    { sub: user.id, email: user.email, role: user.role || 'customer' },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 
   return {
     token,
-    user: { id: user.id, email: user.email, name: user.name, plan: user.plan },
+    user: { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role || 'customer' },
   };
 }
 
@@ -67,7 +72,7 @@ async function login({ email, password }) {
  */
 function getUser(id) {
   const user = db.get(
-    'SELECT id, email, name, plan, created_at FROM users WHERE id = ?',
+    'SELECT id, email, name, plan, role, created_at FROM users WHERE id = ?',
     [id]
   );
 
