@@ -79,6 +79,19 @@ function setLoading(btnId, isLoading, label) {
   b.disabled=isLoading;
   if(label) b.textContent=isLoading?'…':label;
 }
+function initials(email) {
+  if (!email) return '?';
+  return email.split('@')[0].slice(0, 2).toUpperCase();
+}
+
+/* ──────────────────────── Sync topnav project picker ─────────────── */
+function syncTopnavProject() {
+  const sel = document.getElementById('cust-topnav-project');
+  if (!sel) return;
+  sel.innerHTML = _customerProjects.map(p =>
+    `<option value="${esc(p.id)}" ${p.id === _analyticsProjectId ? 'selected' : ''}>${esc(p.name)}</option>`
+  ).join('');
+}
 
 /* ──────────────────────── Auth ───────────────────────────────────── */
 function authTab(tab) {
@@ -185,14 +198,25 @@ async function boot() {
     return;
   }
   document.getElementById('v-auth').style.display='none';
+  const av = initials(_user.email);
 
   if(_user.role === 'admin') {
     document.getElementById('v-admin').style.display='block';
-    document.getElementById('admin-email-label').textContent = _user.email||'';
+    const ael  = document.getElementById('admin-email-label');
+    const ael2 = document.getElementById('admin-email-label-2');
+    if(ael)  ael.textContent  = _user.email||'';
+    if(ael2) ael2.textContent = _user.email||'';
     await adminNav('overview');
   } else {
     document.getElementById('v-customer').style.display='block';
-    document.getElementById('cust-email-label').textContent = _user.email||'';
+    const cel  = document.getElementById('cust-email-label');
+    const cel2 = document.getElementById('cust-email-label-2');
+    const cav  = document.getElementById('cust-avatar');
+    const cav2 = document.getElementById('cust-avatar-2');
+    if(cel)  cel.textContent  = _user.email||'';
+    if(cel2) cel2.textContent = _user.email||'';
+    if(cav)  cav.textContent  = av;
+    if(cav2) cav2.textContent = av;
     await custNav('analytics');
   }
 }
@@ -204,6 +228,13 @@ function custNav(page) {
     document.getElementById('sb-'+p)?.classList.toggle('active', p===page);
   });
   clearInterval(_refreshTimer);
+
+  // Show/hide topnav project picker and refresh indicator
+  const picker = document.getElementById('cust-project-picker');
+  const ri     = document.getElementById('cust-refresh-indicator');
+  if(picker) picker.style.display = page==='projects' ? 'none' : '';
+  if(ri)     ri.style.display     = page==='analytics' ? '' : 'none';
+
   if(page==='analytics') loadAnalytics();
   else if(page==='goals')     loadGoals();
   else if(page==='funnels')   loadFunnels();
@@ -220,6 +251,7 @@ async function loadProjects() {
   try {
     const data = await api('/projects');
     _customerProjects = data.projects || [];
+    syncTopnavProject();
     renderProjectsPage(_customerProjects);
   } catch(err) { handleFetchError('cust', err); }
 }
@@ -228,15 +260,20 @@ function renderProjectsPage(projects) {
   const html = `
     <div class="page-content">
       <div class="page-hdr">
-        <h1 class="page-title">My Projects</h1>
-        <button class="btn btn-solid btn-sm" onclick="showNewProjectModal()">+ New Project</button>
+        <div class="page-hdr-left">
+          <h1 class="page-title">Projects &amp; API keys</h1>
+          <p class="page-subtitle">Each project gets a unique API key for your tracker script.</p>
+        </div>
+        <div class="page-hdr-actions">
+          <button class="btn btn-solid btn-sm" onclick="showNewProjectModal()">+ New project</button>
+        </div>
       </div>
       ${projects.length === 0 ? `
         <div class="empty-box">
-          <div style="font-size:2.5rem;margin-bottom:.75rem">🗂️</div>
-          <h3>No projects yet</h3>
-          <p>Create a project to get your tracking script and start collecting analytics.</p>
-          <button class="btn btn-solid" onclick="showNewProjectModal()" style="width:auto;padding:.6rem 1.5rem">Create First Project</button>
+          <div class="empty-box-icon">⚡</div>
+          <h3>Create your first project</h3>
+          <p>Get a tracking API key and embed it on your website. All user interactions will be captured automatically.</p>
+          <button class="btn btn-solid" onclick="showNewProjectModal()" style="width:auto;padding:.6rem 1.5rem">Create project</button>
         </div>
       ` : `
         <div class="proj-grid">
@@ -248,25 +285,30 @@ function renderProjectsPage(projects) {
 }
 
 function projectCard(p) {
-  const masked = p.api_key ? p.api_key.slice(0,14)+'••••••••••••••••••••••' : '—';
+  const masked  = p.api_key ? p.api_key.slice(0,14)+'••••••••••••••••••••' : '—';
+  const initial = (p.name||'?')[0].toUpperCase();
   return `
     <div class="proj-card" id="pc-${p.id}">
-      <div>
-        <div class="proj-name">${esc(p.name)}</div>
-        <div class="proj-date">Created ${fmtDate(p.created_at)}</div>
+      <div class="proj-card-header">
+        <div class="proj-card-icon">${initial}</div>
+        <div style="flex:1;min-width:0">
+          <div class="proj-name">${esc(p.name)}</div>
+          <div class="proj-domain">${esc(p.domain||'No domain set')}</div>
+          <div class="proj-date">Created ${fmtDate(p.created_at)}</div>
+        </div>
       </div>
       <div>
-        <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.4rem">API Key</div>
+        <div class="proj-key-label">API Key</div>
         <div class="proj-key-row">
           <div class="proj-key" id="key-${p.id}">${esc(masked)}</div>
-          <button class="btn btn-ghost btn-xs" onclick="toggleKey('${p.id}','${esc(p.api_key)}')" title="Reveal/Hide">👁</button>
-          <button class="btn btn-ghost btn-xs" onclick="copyText('${esc(p.api_key)}','API key copied!')" title="Copy key">📋</button>
+          <button class="btn btn-ghost btn-xs btn-icon" onclick="toggleKey('${p.id}','${esc(p.api_key)}')" title="Show/Hide">👁</button>
+          <button class="btn btn-ghost btn-xs btn-icon" onclick="copyText('${esc(p.api_key)}','API key copied!')" title="Copy key">📋</button>
         </div>
       </div>
       <div class="proj-actions">
-        <button class="btn btn-ghost btn-sm" onclick="showEmbedModal('${esc(p.api_key)}','${esc(p.name)}')">📦 Embed Script</button>
-        <button class="btn btn-ghost btn-sm" onclick="doRotateKey('${p.id}')">↺ Rotate Key</button>
-        <button class="btn btn-danger btn-sm" onclick="doDeleteProject('${p.id}','${esc(p.name)}')">🗑 Delete</button>
+        <button class="btn btn-ghost btn-sm" onclick="showEmbedModal('${esc(p.api_key)}','${esc(p.name)}')">&lt;/&gt; Install snippet</button>
+        <button class="btn btn-ghost btn-sm" onclick="doRotateKey('${p.id}')">↺ Rotate key</button>
+        <button class="btn btn-danger btn-sm" onclick="doDeleteProject('${p.id}','${esc(p.name)}')">Delete</button>
       </div>
     </div>`;
 }
@@ -279,20 +321,27 @@ function toggleKey(id, fullKey) {
 }
 
 function showNewProjectModal() {
-  openModal('New Project', `
+  openModal('New project', `
     <div id="np-msg"></div>
-    <div class="field"><label>Project Name</label>
-      <input type="text" id="np-name" placeholder="My Website" maxlength="80" /></div>
-    <button class="btn btn-solid" onclick="createProject()">Create Project</button>
+    <div class="field">
+      <label>Project name</label>
+      <input type="text" id="np-name" placeholder="My App" maxlength="80" />
+    </div>
+    <div class="field">
+      <label>Domain <span style="font-weight:400;color:var(--muted);font-size:.73rem">(optional)</span></label>
+      <input type="text" id="np-domain" placeholder="https://myapp.com" maxlength="200" />
+    </div>
+    <button class="btn btn-solid" onclick="createProject()">Create project</button>
   `);
   setTimeout(()=>document.getElementById('np-name')?.focus(),50);
 }
 
 async function createProject() {
-  const name=(document.getElementById('np-name')?.value||'').trim();
+  const name   = (document.getElementById('np-name')?.value||'').trim();
+  const domain = (document.getElementById('np-domain')?.value||'').trim();
   if(!name){ document.getElementById('np-msg').innerHTML='<div class="error-msg">Project name is required.</div>'; return; }
   try {
-    const data = await api('/projects',{method:'POST',body:{name}});
+    const data = await api('/projects',{method:'POST',body:{name,domain}});
     localStorage.setItem('ts_project', data.project?.id||'');
     closeModal();
     await loadProjects();
@@ -324,18 +373,22 @@ async function doDeleteProject(id, name) {
 
 function showEmbedModal(apiKey, projectName) {
   const snippet =
-`<!-- TrackSense – ${projectName} -->
+`<!-- TrackSense — ${projectName} -->
 <script>
   window.SI_PROJECT_KEY = '${apiKey}';
 <\/script>
 <script src="http://localhost:5000/tracker.js"><\/script>`;
 
-  openModal('Embed Script', `
-    <p style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem">
-      Paste these two tags before the <code>&lt;/body&gt;</code> of your website.
+  openModal('Install tracking snippet', `
+    <p style="font-size:.84rem;color:var(--muted);margin-bottom:1rem;line-height:1.6">
+      Paste these two tags right before the <code style="background:var(--surface2);border:1px solid var(--border);padding:.1rem .3rem;border-radius:4px;font-size:.78rem">&lt;/body&gt;</code> of your site. TrackSense will automatically capture all user interactions.
     </p>
     <div class="code-block" id="embed-code">${esc(snippet)}</div>
-    <button class="btn btn-solid" onclick="copyText(document.getElementById('embed-code').textContent,'Script copied!')">📋 Copy Script</button>
+    <button class="btn btn-solid" onclick="copyText(document.getElementById('embed-code').textContent,'Snippet copied!')">📋 Copy snippet</button>
+    <div style="margin-top:1rem;padding:.875rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:.78rem;color:var(--muted);line-height:1.7">
+      <strong style="color:var(--text)">Auto-captured events:</strong><br>
+      Page views, clicks (with position), scroll depth, form interactions, rage clicks, outbound links, JS errors, and more — zero configuration needed.
+    </div>
   `);
 }
 
@@ -354,6 +407,7 @@ async function loadAnalytics() {
     const saved = localStorage.getItem('ts_project');
     const pick  = _customerProjects.find(p=>p.id===saved) || _customerProjects[0];
     _analyticsProjectId = pick.id;
+    syncTopnavProject();
 
     await fetchAndRenderAnalytics();
 
@@ -389,104 +443,119 @@ function renderAnalyticsPage(stats, events) {
   const sessions   = stats.recentSessions  || [];
   const topPages   = stats.topPages        || [];
   const pageViews  = (breakdown.find(e=>e.event==='page_view')||{count:0}).count;
+  const clicks     = (breakdown.find(e=>e.event==='click')||{count:0}).count;
+  const errors     = (breakdown.find(e=>e.event==='js_error')||{count:0}).count;
   const avgEPS     = stats.totalSessions>0 ? (stats.totalEvents/stats.totalSessions).toFixed(1) : '0';
   const timeline   = buildTimeline(events);
-  const recents    = events.slice(0,35);
-
-  const projOptions = _customerProjects.map(p=>
-    `<option value="${esc(p.id)}" ${p.id===_analyticsProjectId?'selected':''}>${esc(p.name)}</option>`
-  ).join('');
+  const recents    = events.slice(0,40);
 
   const html = `
     <div class="page-content">
       <div class="page-hdr">
-        <h1 class="page-title">Analytics</h1>
-        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-          <select style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .75rem;font-size:.83rem;outline:none;cursor:pointer"
-            onchange="_analyticsProjectId=this.value;localStorage.setItem('ts_project',this.value);destroyCharts();fetchAndRenderAnalytics()">
-            ${projOptions}
-          </select>
-          <div style="display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--muted)">
-            <span class="rdot" id="rdot-cust"></span>
-            <span id="rdot-time">—</span>
-          </div>
+        <div class="page-hdr-left">
+          <h1 class="page-title">Overview</h1>
+          <p class="page-subtitle">All captured events and sessions for this project</p>
+        </div>
+        <div class="page-hdr-actions">
           <button class="btn btn-ghost btn-sm" onclick="fetchAndRenderAnalytics(true)">↺ Refresh</button>
         </div>
       </div>
 
-      <!-- KPIs -->
+      <!-- KPI Cards -->
       <div class="kpi-grid">
-        <div class="kpi-card" style="--c:#6366f1">
+        <div class="kpi-card">
+          <div class="kpi-icon" style="--ic:#eff6ff">📊</div>
           <div class="kpi-label">Total Events</div>
           <div class="kpi-val">${fmt(stats.totalEvents)}</div>
           <div class="kpi-sub">all time</div>
         </div>
-        <div class="kpi-card" style="--c:#22d3ee">
+        <div class="kpi-card">
+          <div class="kpi-icon" style="--ic:#f4f3ff">👤</div>
           <div class="kpi-label">Sessions</div>
           <div class="kpi-val">${fmt(stats.totalSessions)}</div>
           <div class="kpi-sub">unique browser sessions</div>
         </div>
-        <div class="kpi-card" style="--c:#22c55e">
+        <div class="kpi-card">
+          <div class="kpi-icon" style="--ic:#f0fdf4">📄</div>
           <div class="kpi-label">Page Views</div>
           <div class="kpi-val">${fmt(pageViews)}</div>
           <div class="kpi-sub">page_view events</div>
         </div>
-        <div class="kpi-card" style="--c:#f59e0b">
-          <div class="kpi-label">Avg Events / Session</div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="--ic:#fff7ed">🖱</div>
+          <div class="kpi-label">Clicks</div>
+          <div class="kpi-val">${fmt(clicks)}</div>
+          <div class="kpi-sub">tracked click events</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="--ic:#ecfdf5">⚡</div>
+          <div class="kpi-label">Events / Session</div>
           <div class="kpi-val">${avgEPS}</div>
           <div class="kpi-sub">engagement depth</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="--ic:#fef3f2">⚠</div>
+          <div class="kpi-label">JS Errors</div>
+          <div class="kpi-val" style="color:${errors>0?'var(--red)':'var(--text)'}">${fmt(errors)}</div>
+          <div class="kpi-sub">captured error events</div>
         </div>
       </div>
 
       <!-- Timeline -->
-      <div class="chart-grid" style="grid-template-columns:1fr;margin-bottom:1.1rem">
-        <div class="chart-card">
-          <div class="chart-title">Events — Last 14 Days</div>
-          <div class="chart-wrap tall"><canvas id="ch-timeline"></canvas></div>
+      <div class="chart-card full" style="margin-bottom:1.25rem">
+        <div class="chart-header">
+          <span class="chart-title">Events over time — last 14 days</span>
+          <div class="chart-legend">
+            <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#6336ff"></div><span>Events</span></div>
+          </div>
         </div>
+        <div class="chart-wrap tall"><canvas id="ch-timeline"></canvas></div>
       </div>
 
       <!-- Breakdown + Pages -->
       <div class="chart-grid">
         <div class="chart-card">
-          <div class="chart-title">Event Type Breakdown</div>
+          <div class="chart-header"><span class="chart-title">Event type breakdown</span></div>
           <div class="chart-wrap"><canvas id="ch-breakdown"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-title">Top Pages by Views</div>
+          <div class="chart-header">
+            <span class="chart-title">Top pages</span>
+            <span style="font-size:.72rem;color:var(--muted)">by page views</span>
+          </div>
           <div class="chart-wrap" id="ch-pages-wrap"><canvas id="ch-pages"></canvas></div>
         </div>
       </div>
 
       <!-- Recent Sessions -->
       <div class="table-card">
-        <div class="table-hdr">
-          <div class="table-title">Recent Sessions</div>
-          <span class="table-meta">${sessions.length} shown</span>
+        <div class="table-toolbar">
+          <span class="table-toolbar-title">Recent sessions</span>
+          <span class="table-toolbar-meta">${sessions.length} shown</span>
         </div>
         <div class="tbl-scroll">
           <table>
             <thead><tr><th>Session ID</th><th>Started</th><th>Events</th><th>Date</th></tr></thead>
             <tbody>
               ${sessions.length===0
-                ? '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">No sessions yet.</td></tr>'
+                ? '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:2rem">No sessions yet.</td></tr>'
                 : sessions.map(s=>`
                   <tr>
-                    <td style="font-family:monospace;max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(s.session_id)}</td>
+                    <td style="font-family:monospace;font-size:.75rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.session_id)}</td>
                     <td>${timeAgo(s.started_at)}</td>
-                    <td>${s.event_count}</td>
-                    <td>${fmtDate(s.started_at)}</td>
+                    <td><span class="badge badge-green">${s.event_count}</span></td>
+                    <td style="color:var(--muted)">${fmtDate(s.started_at)}</td>
                   </tr>`).join('')}
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Event Feed -->
+      <!-- Live Event Feed -->
       <div class="table-card">
-        <div class="table-hdr">
-          <div class="table-title">Live Event Feed</div>
-          <span class="table-meta">Latest ${recents.length}</span>
+        <div class="table-toolbar">
+          <span class="table-toolbar-title">Live event stream</span>
+          <span class="table-toolbar-meta">Latest ${recents.length} events</span>
         </div>
         <div class="evt-feed">
           ${recents.length===0
@@ -516,22 +585,22 @@ function renderAnalyticsPage(stats, events) {
 }
 
 function renderNoProjects() {
-  const html = `
+  setMain('cust', `
     <div class="page-content">
-      <div class="empty-box">
-        <div style="font-size:2.5rem;margin-bottom:.75rem">📊</div>
+      <div class="empty-box" style="margin-top:4rem">
+        <div class="empty-box-icon">⚡</div>
         <h3>Create your first project</h3>
-        <p>Get a tracking key and embed it on your website. Analytics will appear here automatically.</p>
-        <button class="btn btn-solid" onclick="showNewProjectModal();custNav('projects')" style="width:auto;padding:.6rem 1.5rem">+ New Project</button>
+        <p>Get a tracking key and embed it on your website. Analytics will appear here automatically — no manual event configuration required.</p>
+        <button class="btn btn-solid" onclick="custNav('projects')" style="width:auto;padding:.6rem 1.75rem">+ Create project</button>
       </div>
-    </div>`;
-  setMain('cust', html);
+    </div>`);
 }
 
 /* ──────────────────────── Charts ─────────────────────────────────── */
-const PALETTE = ['#6366f1','#22d3ee','#22c55e','#f59e0b','#a855f7','#ef4444','#f97316','#ec4899'];
-const TT = { backgroundColor:'#1a1d2e',borderColor:'#2a2d3e',borderWidth:1,padding:10,titleColor:'#e2e8f0',bodyColor:'#94a3b8' };
-Chart.defaults.color='#64748b'; Chart.defaults.borderColor='#2a2d3e';
+const PALETTE = ['#6336ff','#0ea5e9','#12b76a','#f79009','#a78bfa','#f04438','#f97316','#ec4899'];
+const TT = { backgroundColor:'#ffffff', borderColor:'#e5e3ef', borderWidth:1, padding:10, titleColor:'#1a1035', bodyColor:'#7b72a0', titleFont:{family:'Inter,sans-serif',weight:'600'}, bodyFont:{family:'Inter,sans-serif'} };
+Chart.defaults.color='#7b72a0'; Chart.defaults.borderColor='#e5e3ef';
+Chart.defaults.font.family='Inter,sans-serif';
 
 function destroyCharts() {
   Object.values(_charts).forEach(c=>{ try{c.destroy()}catch{} });
@@ -564,16 +633,16 @@ function renderTimelineChart({labels,data}) {
     type:'line',
     data:{ labels, datasets:[{
       label:'Events', data,
-      borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,.1)',
-      fill:true, tension:.4, pointRadius:4, pointHoverRadius:6,
-      pointBackgroundColor:'#6366f1', pointBorderColor:'#0f1117', pointBorderWidth:2,
+      borderColor:'#6336ff', backgroundColor:'rgba(99,54,255,.08)',
+      fill:true, tension:.45, pointRadius:4, pointHoverRadius:6,
+      pointBackgroundColor:'#6336ff', pointBorderColor:'#ffffff', pointBorderWidth:2,
     }]},
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{display:false}, tooltip:TT },
       scales:{
-        x:{ grid:{color:'#1e2130'} },
-        y:{ grid:{color:'#1e2130'}, beginAtZero:true, ticks:{precision:0} },
+        x:{ grid:{color:'#f3f2f8'}, ticks:{color:'#7b72a0'} },
+        y:{ grid:{color:'#f3f2f8'}, beginAtZero:true, ticks:{precision:0, color:'#7b72a0'} },
       },
     },
   });
@@ -582,16 +651,17 @@ function renderTimelineChart({labels,data}) {
 function renderBreakdownChart(breakdown) {
   const ctx=document.getElementById('ch-breakdown');
   if(!ctx||!breakdown.length) return;
+  const top = breakdown.slice(0,8);
   _charts.breakdown=new Chart(ctx,{
     type:'doughnut',
-    data:{ labels:breakdown.map(e=>e.event), datasets:[{
-      data:breakdown.map(e=>e.count),
-      backgroundColor:PALETTE.slice(0,breakdown.length),
-      borderColor:'#1a1d2e', borderWidth:3, hoverOffset:10,
+    data:{ labels:top.map(e=>e.event), datasets:[{
+      data:top.map(e=>e.count),
+      backgroundColor:PALETTE.slice(0,top.length),
+      borderColor:'#ffffff', borderWidth:3, hoverOffset:8,
     }]},
     options:{
-      responsive:true, maintainAspectRatio:false, cutout:'60%',
-      plugins:{ legend:{position:'right',labels:{padding:12,boxWidth:11,font:{size:11}}}, tooltip:TT },
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{ legend:{position:'right',labels:{padding:14,boxWidth:10,font:{size:11},color:'#7b72a0'}}, tooltip:TT },
     },
   });
 }
@@ -608,14 +678,14 @@ function renderPagesChart(topPages) {
     type:'bar',
     data:{ labels:topPages.map(p=>p.page), datasets:[{
       label:'Views', data:topPages.map(p=>p.count),
-      backgroundColor:'rgba(34,211,238,.65)', borderRadius:5, borderSkipped:false,
+      backgroundColor:'rgba(99,54,255,.7)', borderRadius:5, borderSkipped:false,
     }]},
     options:{
       responsive:true, maintainAspectRatio:false, indexAxis:'y',
       plugins:{ legend:{display:false}, tooltip:TT },
       scales:{
-        x:{ grid:{color:'#1e2130'}, beginAtZero:true, ticks:{precision:0} },
-        y:{ grid:{display:false} },
+        x:{ grid:{color:'#f3f2f8'}, beginAtZero:true, ticks:{precision:0} },
+        y:{ grid:{display:false}, ticks:{color:'#7b72a0'} },
       },
     },
   });
@@ -701,23 +771,35 @@ async function deleteGoal(id) {
 }
 
 async function loadGoalStats(id, name) {
-  openModal('Goal Stats: '+name, `<div id="gs-wrap" style="min-height:120px">${loader()}</div>`);
+  openModal('Goal: '+name, `<div id="gs-wrap" style="min-height:140px">${loader()}</div>`);
   try {
     const d = await api(`/goals/${id}/stats?days=30`);
     const dailyEntries = Object.entries(d.daily||{}).sort(([a],[b])=>a>b?1:-1);
-    const rateColor = d.conversionRate>5 ? 'var(--green)' : d.conversionRate>1 ? 'var(--amber)' : 'var(--red)';
+    const maxC = Math.max(...Object.values(d.daily||{x:0}),1);
+    const rateColor = d.conversionRate>5 ? 'var(--green)' : d.conversionRate>1 ? 'var(--yellow)' : 'var(--red)';
     document.getElementById('gs-wrap').innerHTML = `
-      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:.75rem">
-        <div class="kpi-card" style="--c:#6366f1;padding:.75rem"><div class="kpi-label" style="font-size:.65rem">Conversions</div><div class="kpi-val" style="font-size:1.4rem">${fmt(d.total)}</div></div>
-        <div class="kpi-card" style="--c:#22c55e;padding:.75rem"><div class="kpi-label" style="font-size:.65rem">Unique Sessions</div><div class="kpi-val" style="font-size:1.4rem">${fmt(d.uniqueSessions)}</div></div>
-        <div class="kpi-card" style="--c:${rateColor};padding:.75rem"><div class="kpi-label" style="font-size:.65rem">Conv. Rate</div><div class="kpi-val" style="font-size:1.4rem" style="color:${rateColor}">${d.conversionRate}%</div></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.25rem">
+        <div class="kpi-card" style="padding:.875rem 1rem">
+          <div class="kpi-label">Conversions</div>
+          <div class="kpi-val" style="font-size:1.625rem">${fmt(d.total)}</div>
+          <div class="kpi-sub">last 30 days</div>
+        </div>
+        <div class="kpi-card" style="padding:.875rem 1rem">
+          <div class="kpi-label">Unique sessions</div>
+          <div class="kpi-val" style="font-size:1.625rem">${fmt(d.uniqueSessions)}</div>
+          <div class="kpi-sub">converted</div>
+        </div>
+        <div class="kpi-card" style="padding:.875rem 1rem">
+          <div class="kpi-label">Conv. rate</div>
+          <div class="kpi-val" style="font-size:1.625rem;color:${rateColor}">${d.conversionRate}%</div>
+          <div class="kpi-sub">of all sessions</div>
+        </div>
       </div>
-      <div style="font-size:.75rem;color:var(--muted);margin-bottom:.5rem">Daily conversions (last 30 days)</div>
-      <div style="display:flex;align-items:flex-end;gap:3px;height:60px;overflow-x:auto">
+      <div style="font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:.6rem">Daily conversions (last 30 days)</div>
+      <div style="display:flex;align-items:flex-end;gap:3px;height:72px">
         ${dailyEntries.map(([day,count])=>{
-          const maxC = Math.max(...Object.values(d.daily),1);
-          const h = Math.round((count/maxC)*54)+6;
-          return `<div title="${day}: ${count}" style="flex:1;min-width:8px;height:${h}px;background:#6366f1;border-radius:2px 2px 0 0;opacity:.85"></div>`;
+          const h = Math.round((count/maxC)*64)+8;
+          return `<div title="${day}: ${count}" style="flex:1;min-width:6px;height:${h}px;background:#6336ff;border-radius:3px 3px 0 0;opacity:.8;cursor:default"></div>`;
         }).join('')}
       </div>`;
   } catch(err) {
@@ -739,41 +821,59 @@ async function loadFunnels() {
 
 function renderFunnelsPage(funnels) {
   const rows = funnels.map(f=>`
-    <div class="proj-card" style="gap:.5rem">
-      <div>
-        <div class="proj-name">${esc(f.name)}</div>
-        <div class="proj-date">${f.steps.length} steps: ${f.steps.map(s=>esc(s)).join(' → ')}</div>
-      </div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="showFunnelResults('${f.id}','${esc(f.name)}')">📊 Results</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteFunnel('${f.id}')">🗑 Delete</button>
-      </div>
-    </div>`).join('');
+    <tr>
+      <td>
+        <div style="font-weight:600;color:var(--text)">${esc(f.name)}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.15rem">${f.steps.length} steps</div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
+          ${f.steps.map((s,i)=>`
+            ${i>0?'<span style="color:var(--muted2);font-size:.75rem">&rarr;</span>':''}
+            <code style="background:var(--surface2);border:1px solid var(--border);padding:.15rem .4rem;border-radius:5px;font-size:.72rem">${esc(s)}</code>
+          `).join('')}
+        </div>
+      </td>
+      <td style="color:var(--muted);font-size:.75rem">${fmtDate(f.created_at)}</td>
+      <td>
+        <div style="display:flex;gap:.375rem">
+          <button class="btn btn-solid btn-sm" onclick="showFunnelResults('${f.id}','${esc(f.name)}')">View results</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteFunnel('${f.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>`).join('');
 
   setMain('cust', `
     <div class="page-content">
       <div class="page-hdr">
-        <h1 class="page-title">Funnels</h1>
-        <button class="btn btn-solid btn-sm" onclick="showNewFunnelModal()">+ New Funnel</button>
+        <div class="page-hdr-left">
+          <h1 class="page-title">Funnels</h1>
+          <p class="page-subtitle">Visualize where users drop off in multi-step flows</p>
+        </div>
+        <div class="page-hdr-actions">
+          <button class="btn btn-solid btn-sm" onclick="showNewFunnelModal()">+ New funnel</button>
+        </div>
       </div>
-      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
-        Funnels show where users drop off in a sequence of pages. Steps = page pathnames (e.g. <code>/pricing</code>).
-      </p>
       ${funnels.length===0
-        ? `<div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🌊</div><h3>No funnels yet</h3><p>Create a funnel to measure drop-off.</p></div>`
-        : `<div class="proj-grid">${rows}</div>`}
+        ? `<div class="empty-box"><div class="empty-box-icon">&#8681;</div><h3>No funnels yet</h3><p>Build a funnel using page paths to measure conversion drop-off through your key user flows.</p></div>`
+        : `<div class="table-card"><div class="tbl-scroll"><table><thead><tr><th>Funnel</th><th>Steps</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`}
     </div>`);
 }
 
 function showNewFunnelModal() {
-  openModal('New Funnel', `
+  openModal('New funnel', `
     <div id="nf-msg"></div>
-    <div class="field"><label>Funnel Name</label>
-      <input type="text" id="nf-name" placeholder="e.g. Signup Flow" maxlength="80" /></div>
-    <div class="field"><label>Steps (one page path per line)</label>
-      <textarea id="nf-steps" rows="5" placeholder="/\n/pricing\n/signup\n/thank-you"
-        style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.5rem;font-family:monospace;font-size:.82rem;resize:vertical"></textarea></div>
-    <button class="btn btn-solid" onclick="createFunnel()">Create Funnel</button>
+    <div class="field">
+      <label>Funnel name</label>
+      <input type="text" id="nf-name" placeholder="e.g. Signup Flow" maxlength="80" />
+    </div>
+    <div class="field">
+      <label>Steps <span style="font-weight:400;color:var(--muted);font-size:.73rem">(one page path per line, min 2)</span></label>
+      <textarea id="nf-steps" rows="5" placeholder="/&#10;/pricing&#10;/signup&#10;/thank-you"
+        style="width:100%;background:var(--surface2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.625rem .75rem;font-family:monospace;font-size:.82rem;resize:vertical;outline:none"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    </div>
+    <button class="btn btn-solid" onclick="createFunnel()">Create funnel</button>
   `);
   setTimeout(()=>document.getElementById('nf-name')?.focus(),50);
 }
@@ -802,28 +902,32 @@ async function deleteFunnel(id) {
 }
 
 async function showFunnelResults(id, name) {
-  openModal('Funnel: '+name, `<div id="fr-wrap" style="min-height:140px">${loader()}</div>`);
+  openModal('Funnel: '+name, `<div id="fr-wrap" style="min-height:160px">${loader()}</div>`);
   try {
     const d = await api(`/funnels/${id}/results?days=30`);
     const steps = d.steps||[];
-    const maxSessions = steps.length ? steps[0].sessions : 1;
+    const maxS  = steps.length ? steps[0].sessions : 1;
     document.getElementById('fr-wrap').innerHTML = `
-      <div style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem">
-        ${d.totalSessionsInPeriod} total sessions in period · Last 30 days
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:1.25rem">
+        <strong style="color:var(--text)">${d.totalSessionsInPeriod}</strong> total sessions · Last 30 days
       </div>
       ${steps.map((s,i)=>{
-        const w = maxSessions>0 ? Math.round((s.sessions/maxSessions)*100) : 0;
-        const col = i===0 ? '#6366f1' : s.dropOffRate>50 ? '#ef4444' : s.dropOffRate>25 ? '#f59e0b' : '#22c55e';
+        const pct = maxS>0 ? Math.round((s.sessions/maxS)*100) : 0;
+        const col = i===0 ? '#6336ff' : s.dropOffRate>50 ? '#f04438' : s.dropOffRate>25 ? '#f79009' : '#12b76a';
         return `
-          <div style="margin-bottom:.75rem">
-            <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:.25rem">
-              <span style="color:var(--text)">${i+1}. ${esc(s.step)}</span>
-              <span style="color:var(--muted)">${s.sessions} sessions
-                ${i>0 ? '<span style="color:'+col+'"> (−'+s.dropOffRate+'%)</span>' : ''}
-              </span>
+          <div class="funnel-step">
+            <div class="funnel-step-label">
+              <span style="color:var(--muted2);font-size:.72rem;margin-right:.4rem">${i+1}</span>
+              <code style="font-size:.78rem;background:var(--surface2);border:1px solid var(--border);padding:.15rem .4rem;border-radius:4px">${esc(s.step)}</code>
             </div>
-            <div style="height:10px;background:var(--surface);border-radius:5px;overflow:hidden">
-              <div style="height:100%;width:${w}%;background:${col};border-radius:5px;transition:width .5s"></div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:${pct}%;background:${col}">
+                <span class="funnel-bar-text">${pct}%</span>
+              </div>
+            </div>
+            <div class="funnel-step-meta">
+              <strong style="color:var(--text)">${s.sessions}</strong> sessions
+              ${i>0?`<div class="funnel-drop" style="color:${col}">↓ ${s.dropOffRate}% drop</div>`:''}
             </div>
           </div>`;
       }).join('')}`;
@@ -847,84 +951,81 @@ async function loadHeatmap() {
 }
 
 function renderHeatmapPage(pages) {
-  const pageOpts = pages.map(p=>`<option value="${esc(p.page)}">${esc(p.page)} (${p.clicks})</option>`).join('');
+  const pageOpts = pages.map(p=>`<option value="${esc(p.page)}">${esc(p.page)} (${p.clicks} clicks)</option>`).join('');
   setMain('cust', `
     <div class="page-content">
       <div class="page-hdr">
-        <h1 class="page-title">Heatmap</h1>
-      </div>
-      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
-        Click heatmap normalised to 1280×800. Darker = more clicks.
-      </p>
-      ${pages.length===0
-        ? `<div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🔥</div><h3>No click data yet</h3><p>Clicks will appear here once tracked.</p></div>`
-        : `
-        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
-          <select id="hm-page-sel" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .75rem;font-size:.83rem;outline:none"
-            onchange="showHeatmapCanvas(this.value)">${pageOpts}</select>
-          <button class="btn btn-ghost btn-sm" onclick="showHeatmapCanvas(document.getElementById('hm-page-sel').value)">↺ Reload</button>
+        <div class="page-hdr-left">
+          <h1 class="page-title">Heatmaps</h1>
+          <p class="page-subtitle">Click density map. Normalized to 1280×800 reference viewport.</p>
         </div>
-        <canvas id="hm-canvas" width="1280" height="800"
-          style="width:100%;max-width:960px;border:1px solid var(--border);border-radius:8px;background:#0a0c14"></canvas>`}
+      </div>
+      ${pages.length===0
+        ? `<div class="empty-box"><div class="empty-box-icon">▦</div><h3>No click data yet</h3><p>Clicks will appear here once your tracker captures interactions. Make sure your project is set up and visit your website.</p></div>`
+        : `
+        <div class="heatmap-container">
+          <div class="heatmap-toolbar">
+            <label style="font-size:.8rem;font-weight:600;color:var(--muted)">Page</label>
+            <select id="hm-page-sel" style="width:auto;border:1.5px solid var(--border);border-radius:8px;padding:.3rem .75rem;font-size:.83rem"
+              onchange="showHeatmapCanvas(this.value)">${pageOpts}</select>
+            <button class="btn btn-ghost btn-sm" onclick="showHeatmapCanvas(document.getElementById('hm-page-sel').value)">↺ Reload</button>
+          </div>
+          <canvas id="hm-canvas" width="1280" height="800"
+            style="width:100%;display:block;background:#f8f8fc;border-top:1px solid var(--border)"></canvas>
+        </div>`}
     </div>`);
 
-  if(pages.length>0) {
-    showHeatmapCanvas(pages[0].page);
-  }
+  if(pages.length>0) showHeatmapCanvas(pages[0].page);
 }
 
 async function showHeatmapCanvas(page) {
   const canvas = document.getElementById('hm-canvas');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle='#0a0c14';
+  ctx.fillStyle='#f8f8fc';
   ctx.fillRect(0,0,1280,800);
-  ctx.fillStyle='rgba(255,255,255,.3)';
-  ctx.font='14px monospace';
+  ctx.fillStyle='rgba(99,54,255,.5)';
+  ctx.font='14px Inter,sans-serif';
   ctx.fillText('Loading…',590,400);
 
   try {
     const d = await api(`/heatmap?projectId=${_analyticsProjectId}&page=${encodeURIComponent(page)}&days=30`);
-    ctx.fillStyle='#0a0c14';
+    ctx.fillStyle='#f8f8fc';
     ctx.fillRect(0,0,1280,800);
 
-    // Draw a faint grid
-    ctx.strokeStyle='rgba(255,255,255,.04)';
+    // Faint grid
+    ctx.strokeStyle='rgba(99,54,255,.05)';
     for(let x=0;x<1280;x+=128){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,800);ctx.stroke(); }
     for(let y=0;y<800;y+=80){  ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1280,y);ctx.stroke(); }
 
     const pts = d.points||[];
     if(!pts.length) {
-      ctx.fillStyle='rgba(255,255,255,.4)';
-      ctx.font='16px monospace';
-      ctx.fillText('No click data for this page.',480,400);
+      ctx.fillStyle='rgba(99,54,255,.4)';
+      ctx.font='15px Inter,sans-serif';
+      ctx.fillText('No click data for this page.',470,400);
       return;
     }
     const maxCount = Math.max(...pts.map(p=>p.count));
-
     for(const {nx,ny,count} of pts) {
       const intensity = count/maxCount;
-      const r = Math.round(4+intensity*24);
-      // Color: cool→warm
-      const red   = Math.round(60 + 195*intensity);
-      const green = Math.round(60 * (1-intensity));
-      const blue  = Math.round(200 * (1-intensity));
+      const r = Math.round(6+intensity*28);
+      const red   = Math.round(59  + intensity*193);
+      const green = Math.round(130 * (1-intensity));
+      const blue  = Math.round(245 * (1-intensity) + 10);
       const grad = ctx.createRadialGradient(nx,ny,0,nx,ny,r);
-      grad.addColorStop(0, `rgba(${red},${green},${blue},${0.4+0.5*intensity})`);
+      grad.addColorStop(0, `rgba(${red},${green},${blue},${(0.35+0.55*intensity).toFixed(2)})`);
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle=grad;
       ctx.beginPath();
       ctx.arc(nx,ny,r,0,Math.PI*2);
       ctx.fill();
     }
-
-    // Legend
-    ctx.fillStyle='rgba(255,255,255,.5)';
-    ctx.font='11px sans-serif';
-    ctx.fillText(`${d.total} clicks on ${esc(page)}`,10,790);
+    ctx.fillStyle='rgba(99,54,255,.6)';
+    ctx.font='11px Inter,sans-serif';
+    ctx.fillText(`${d.total} clicks · ${page}`,10,790);
   } catch(err) {
-    ctx.fillStyle='rgba(255,80,80,.8)';
-    ctx.font='14px monospace';
+    ctx.fillStyle='rgba(240,68,56,.7)';
+    ctx.font='14px Inter,sans-serif';
     ctx.fillText(err.message,40,400);
   }
 }
@@ -954,28 +1055,41 @@ async function loadSessions() {
 
 function renderSessionsPage(sessions) {
   if(!sessions.length) {
-    setMain('cust',`<div class="page-content"><div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🎬</div><h3>No sessions yet</h3></div></div>`);
+    setMain('cust',`<div class="page-content"><div class="empty-box"><div class="empty-box-icon">&#9654;</div><h3>No sessions yet</h3><p>Sessions appear here once your tracker starts capturing events.</p></div></div>`);
     return;
   }
-  const rows = sessions.map(s=>`
+  const rows = sessions.map(s=>{
+    const dur = s.events.length>1
+      ? Math.round((new Date(s.events[s.events.length-1].timestamp)-new Date(s.events[0].timestamp))/1000)
+      : 0;
+    const durStr = dur>=60 ? `${Math.floor(dur/60)}m ${dur%60}s` : `${dur}s`;
+    const types = [...new Set(s.events.map(e=>e.event))];
+    return `
     <tr style="cursor:pointer" onclick="showSessionModal('${esc(s.session_id)}')">
-      <td style="font-family:monospace;font-size:.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(s.session_id)}</td>
-      <td>${s.events.length}</td>
+      <td style="font-family:monospace;font-size:.72rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.session_id.slice(0,20)+'\u2026')}</td>
+      <td><span class="badge badge-blue" style="font-size:.7rem">${s.events.length}</span></td>
+      <td style="font-size:.75rem">${durStr}</td>
       <td>${timeAgo(s.started_at)}</td>
-      <td style="color:var(--muted);font-size:.75rem">
-        ${[...new Set(s.events.map(e=>e.event))].slice(0,4).join(', ')}
+      <td style="color:var(--muted);font-size:.73rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${types.slice(0,5).map(t=>`<span class="${badgeCls(t)}" style="font-size:.68rem;margin-right:.2rem">${esc(t)}</span>`).join('')}
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   setMain('cust',`
     <div class="page-content">
-      <div class="page-hdr"><h1 class="page-title">Session Recordings</h1>
-        <button class="btn btn-ghost btn-sm" onclick="loadSessions()">↺ Refresh</button>
+      <div class="page-hdr">
+        <div class="page-hdr-left">
+          <h1 class="page-title">Sessions</h1>
+          <p class="page-subtitle">Click any session to view its full event timeline</p>
+        </div>
+        <div class="page-hdr-actions">
+          <button class="btn btn-ghost btn-sm" onclick="loadSessions()">&#8635; Refresh</button>
+        </div>
       </div>
-      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">Click any session to view its full event timeline.</p>
       <div class="table-card">
         <div class="tbl-scroll"><table>
-          <thead><tr><th>Session ID</th><th>Events</th><th>Started</th><th>Event Types</th></tr></thead>
+          <thead><tr><th>Session ID</th><th>Events</th><th>Duration</th><th>Started</th><th>Event types</th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
       </div>
@@ -1023,43 +1137,42 @@ async function loadRetention() {
 
 function renderRetentionPage(cohorts) {
   if(!cohorts.length) {
-    setMain('cust',`<div class="page-content"><div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">📅</div><h3>No data yet</h3></div></div>`);
+    setMain('cust',`<div class="page-content"><div class="empty-box"><div class="empty-box-icon">&#128197;</div><h3>No retention data yet</h3><p>Retention cohorts appear after users return across multiple weeks.</p></div></div>`);
     return;
   }
   const maxWeeks = Math.max(...cohorts.map(c=>c.retention.length));
 
-  // Header: Week +0, +1, +2, ...
-  const hdrCols = Array.from({length:maxWeeks},(_,i)=>`<th style="min-width:52px">Wk +${i}</th>`).join('');
+  const hdrCols = Array.from({length:maxWeeks},(_,i)=>`<th style="min-width:52px;text-align:center">Wk +${i}</th>`).join('');
 
   const rows = cohorts.map(c=>{
     const cells = Array.from({length:maxWeeks},(_,i)=>{
       if(i>=c.retention.length) return '<td></td>';
       const pct = c.retention[i];
-      const bg  = i===0 ? '#3730a3'
-        : pct>=60 ? '#166534'
-        : pct>=30 ? '#92400e'
-        : '#7f1d1d';
-      return `<td style="background:${bg};color:#fff;text-align:center;border-radius:4px;font-size:.78rem">${pct}%</td>`;
+      const opacity = i===0 ? 1 : Math.max(0.12, pct/100);
+      return `<td><div class="retention-cell" style="opacity:${opacity.toFixed(2)};background:${i===0?'#6336ff':'rgba(99,54,255,1)'}">${pct}%</div></td>`;
     }).join('');
     return `<tr>
-      <td style="white-space:nowrap;font-size:.78rem">${esc(c.week)}</td>
-      <td style="text-align:center;color:var(--cyan)">${c.newSessions}</td>
+      <td style="white-space:nowrap;font-size:.78rem;font-weight:500">${esc(c.week)}</td>
+      <td style="text-align:center;font-weight:600;color:var(--accent)">${c.newSessions}</td>
       ${cells}
     </tr>`;
   }).join('');
 
   setMain('cust',`
     <div class="page-content">
-      <div class="page-hdr"><h1 class="page-title">Retention</h1>
-        <button class="btn btn-ghost btn-sm" onclick="loadRetention()">↺ Refresh</button>
+      <div class="page-hdr">
+        <div class="page-hdr-left">
+          <h1 class="page-title">Retention</h1>
+          <p class="page-subtitle">Weekly cohort retention — % of users returning in subsequent weeks</p>
+        </div>
+        <div class="page-hdr-actions">
+          <button class="btn btn-ghost btn-sm" onclick="loadRetention()">&#8635; Refresh</button>
+        </div>
       </div>
-      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
-        Weekly cohort retention. Each row = sessions first seen in that week. Columns = % still active in subsequent weeks.
-      </p>
       <div class="table-card">
         <div class="tbl-scroll" style="overflow-x:auto"><table>
           <thead><tr>
-            <th>Cohort Week</th><th style="min-width:60px">New Sessions</th>${hdrCols}
+            <th>Cohort week</th><th style="min-width:60px;text-align:center">New sessions</th>${hdrCols}
           </tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
@@ -1098,45 +1211,61 @@ async function runAbQuery() {
 function renderAbPage(d) {
   setMain('cust',`
     <div class="page-content">
-      <div class="page-hdr"><h1 class="page-title">A/B Tests</h1></div>
-      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1rem">
-        Set a variant using <code>SI.setVariant('variant','control')</code> in your tracker.
-        Conversions are counted from <code>goal_triggered</code> events (or any event you choose).
-      </p>
-      <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
-        <input id="ab-prop"  type="text" value="variant" placeholder="metadata property"
-          style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .6rem;font-size:.82rem;outline:none;width:140px" />
-        <input id="ab-goal"  type="text" placeholder="goal_name filter (opt.)"
-          style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .6rem;font-size:.82rem;outline:none;width:200px" />
-        <select id="ab-days" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .6rem;font-size:.82rem;outline:none">
-          <option value="7">Last 7 days</option>
-          <option value="14">Last 14 days</option>
-          <option value="30" selected>Last 30 days</option>
-          <option value="90">Last 90 days</option>
-        </select>
-        <button class="btn btn-solid btn-sm" onclick="runAbQuery()">Run</button>
+      <div class="page-hdr">
+        <div class="page-hdr-left">
+          <h1 class="page-title">A/B Tests</h1>
+          <p class="page-subtitle">Compare conversion rates across experiment variants</p>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span class="filter-label">Property</span>
+          <input id="ab-prop" type="text" value="variant" placeholder="metadata property"
+            style="border:1.5px solid var(--border);border-radius:8px;padding:.3rem .7rem;font-size:.82rem;outline:none;width:130px;background:var(--surface);color:var(--text)"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'" />
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span class="filter-label">Goal filter</span>
+          <input id="ab-goal" type="text" placeholder="goal_name (optional)"
+            style="border:1.5px solid var(--border);border-radius:8px;padding:.3rem .7rem;font-size:.82rem;outline:none;width:180px;background:var(--surface);color:var(--text)"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'" />
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span class="filter-label">Period</span>
+          <select id="ab-days" style="border:1.5px solid var(--border);border-radius:8px;padding:.3rem .7rem;font-size:.82rem;outline:none;background:var(--surface);color:var(--text)">
+            <option value="7">Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <button class="btn btn-solid btn-sm" onclick="runAbQuery()">Run query</button>
       </div>
       <div id="ab-results">${renderAbTable(d.variants||[])}</div>
     </div>`);
 }
 
 function renderAbTable(variants) {
-  if(!variants.length) return `<div class="empty-box" style="margin-top:0"><div style="font-size:2rem;margin-bottom:.5rem">🧪</div><h3>No variant data</h3><p>Use <code>SI.setVariant('variant','control')</code> in your tracker, then interact with goals.</p></div>`;
+  if(!variants.length) return `<div class="empty-box" style="margin-top:0"><div class="empty-box-icon">&#128203;</div><h3>No variant data</h3><p>Use <code>SI.setVariant('variant','control')</code> in your tracker, then interact with goals.</p></div>`;
   const maxRate = Math.max(...variants.map(v=>v.rate),0.01);
+  const best    = Math.max(...variants.map(x=>x.rate));
   const rows = variants.map(v=>{
     const w   = Math.round((v.rate/maxRate)*100);
-    const col = v.rate===Math.max(...variants.map(x=>x.rate)) ? '#22c55e' : '#6366f1';
+    const isWinner = v.rate===best;
     return `
       <tr>
-        <td><strong>${esc(v.variant)}</strong></td>
-        <td style="text-align:center">${fmt(v.sessions)}</td>
-        <td style="text-align:center">${fmt(v.conversions)}</td>
-        <td style="min-width:200px">
-          <div style="display:flex;align-items:center;gap:.5rem">
-            <div style="flex:1;height:8px;background:var(--surface);border-radius:4px;overflow:hidden">
-              <div style="height:100%;width:${w}%;background:${col};border-radius:4px"></div>
+        <td>
+          <strong style="color:var(--text)">${esc(v.variant)}</strong>
+          ${isWinner&&variants.length>1?'<span class="badge badge-green" style="margin-left:.5rem;font-size:.68rem">winner</span>':''}
+        </td>
+        <td style="text-align:center;font-weight:500">${fmt(v.sessions)}</td>
+        <td style="text-align:center;font-weight:500">${fmt(v.conversions)}</td>
+        <td style="min-width:220px">
+          <div class="ab-bar-wrap">
+            <div class="ab-bar">
+              <div class="ab-bar-fill" style="width:${w}%;background:${isWinner?'#6336ff':'#a78bfa'}"></div>
             </div>
-            <span style="font-size:.82rem;color:${col};min-width:44px">${v.rate}%</span>
+            <span class="ab-rate" style="color:${isWinner?'var(--accent)':'var(--muted)'}">${v.rate}%</span>
           </div>
         </td>
       </tr>`;
@@ -1144,7 +1273,7 @@ function renderAbTable(variants) {
   return `
     <div class="table-card">
       <div class="tbl-scroll"><table>
-        <thead><tr><th>Variant</th><th style="text-align:center">Sessions</th><th style="text-align:center">Conversions</th><th>Conv. Rate</th></tr></thead>
+        <thead><tr><th>Variant</th><th style="text-align:center">Sessions</th><th style="text-align:center">Conversions</th><th>Conv. rate</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
@@ -1158,12 +1287,13 @@ async function _ensureProject() {
     const data = await api('/projects');
     _customerProjects = data.projects||[];
     if(!_customerProjects.length) {
-      setMain('cust',`<div class="page-content"><div class="empty-box"><h3>No projects yet</h3><p><button class="btn btn-solid btn-sm" onclick="custNav('projects')">Create a Project</button></p></div></div>`);
+      setMain('cust',`<div class="page-content"><div class="empty-box"><h3>No projects yet</h3><p><button class="btn btn-solid btn-sm" onclick="custNav('projects')">Create a project</button></p></div></div>`);
       return;
     }
     const saved = localStorage.getItem('ts_project');
     const pick  = _customerProjects.find(p=>p.id===saved)||_customerProjects[0];
     _analyticsProjectId = pick.id;
+    syncTopnavProject();
   } catch(err) { handleFetchError('cust', err); }
 }
 
@@ -1194,32 +1324,36 @@ function renderAdminOverview(s) {
       </div>
 
       <div class="kpi-grid">
-        <div class="kpi-card" style="--c:#6366f1">
-          <div class="kpi-label">Total Customers</div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background:rgba(99,54,255,.1);color:#6336ff">&#128101;</div>
+          <div class="kpi-label">Total customers</div>
           <div class="kpi-val">${fmt(s.totalUsers)}</div>
           <div class="kpi-sub">registered accounts</div>
         </div>
-        <div class="kpi-card" style="--c:#22d3ee">
-          <div class="kpi-label">Total Projects</div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background:rgba(14,165,233,.1);color:#0ea5e9">&#128193;</div>
+          <div class="kpi-label">Total projects</div>
           <div class="kpi-val">${fmt(s.totalProjects)}</div>
           <div class="kpi-sub">across all customers</div>
         </div>
-        <div class="kpi-card" style="--c:#22c55e">
-          <div class="kpi-label">Events Today</div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background:rgba(18,183,106,.1);color:#12b76a">&#9889;</div>
+          <div class="kpi-label">Events today</div>
           <div class="kpi-val">${fmt(s.todayEvents)}</div>
           <div class="kpi-sub">since midnight</div>
         </div>
-        <div class="kpi-card" style="--c:#f59e0b">
-          <div class="kpi-label">Total Events</div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background:rgba(247,144,9,.1);color:#f79009">&#128202;</div>
+          <div class="kpi-label">Total events</div>
           <div class="kpi-val">${fmt(s.totalEvents)}</div>
           <div class="kpi-sub">all time</div>
         </div>
       </div>
 
       <div class="table-card">
-        <div class="table-hdr">
-          <div class="table-title">Recent Signups</div>
-          <span class="table-meta">Last 10 customers</span>
+        <div class="table-toolbar">
+          <div class="table-toolbar-title">Recent signups</div>
+          <span class="table-toolbar-meta">Last 10 customers</span>
         </div>
         <div class="tbl-scroll">
           <table>
@@ -1230,7 +1364,7 @@ function renderAdminOverview(s) {
                 : s.recentUsers.map(u=>`
                   <tr>
                     <td>${esc(u.email)}</td>
-                    <td>${esc(u.name||'—')}</td>
+                    <td>${esc(u.name||'\u2014')}</td>
                     <td>${planBadge(u.plan)}</td>
                     <td>${fmtDate(u.created_at)}</td>
                   </tr>`).join('')}
@@ -1282,9 +1416,9 @@ function renderAdminCustomers(customers) {
       </div>
 
       <div class="table-card">
-        <div class="table-hdr">
-          <div class="table-title">All Customers</div>
-          <span class="table-meta" id="cust-count">${customers.length} total</span>
+        <div class="table-toolbar">
+          <div class="table-toolbar-title">All customers</div>
+          <span class="table-toolbar-meta" id="cust-count">${customers.length} total</span>
         </div>
         <div class="tbl-scroll">
           <table id="cust-table">

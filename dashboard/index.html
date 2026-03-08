@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TrackSense Dashboard</title>
+  <title>TrackSense — Product Analytics</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -12,113 +14,185 @@
 <!-- ══════════════════════════ AUTH VIEW ══════════════════════════ -->
 <div id="v-auth">
   <div class="auth-card">
-    <div class="auth-logo">Track<span>Sense</span></div>
-    <div class="auth-tagline">Real analytics pipeline for real websites.</div>
+    <div class="auth-logo">
+      <div class="auth-logo-icon">T</div>
+      Track<span>Sense</span>
+    </div>
+    <div class="auth-tagline">Product analytics that captures everything.</div>
 
     <div class="auth-tabs" id="auth-tabs">
-      <button class="auth-tab active" onclick="authTab('login')">Sign In</button>
-      <button class="auth-tab"        onclick="authTab('register')">Register</button>
-      <!-- Admin tab only shown when URL contains ?admin -->
+      <button class="auth-tab active" onclick="authTab('login')">Sign in</button>
+      <button class="auth-tab"        onclick="authTab('register')">Create account</button>
     </div>
 
     <div id="auth-msg"></div>
 
     <!-- Login -->
     <form id="f-login" onsubmit="doLogin(event)">
-      <div class="field"><label>Email</label>
-        <input type="email" id="l-email" placeholder="you@company.com" autocomplete="email" required /></div>
-      <div class="field"><label>Password</label>
-        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" required /></div>
-      <button class="btn btn-primary" type="submit" id="l-btn">Sign In</button>
+      <div class="field">
+        <label>Work email</label>
+        <input type="email" id="l-email" placeholder="you@company.com" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-primary" type="submit" id="l-btn">Sign in</button>
     </form>
 
     <!-- Register (customer) -->
     <form id="f-register" style="display:none" onsubmit="doRegister(event)">
-      <div class="field"><label>Email</label>
-        <input type="email" id="r-email" placeholder="you@company.com" autocomplete="email" required /></div>
-      <div class="field"><label>Password <small style="text-transform:none;letter-spacing:0;font-size:.7rem">(min 8 chars)</small></label>
-        <input type="password" id="r-pass" placeholder="Choose a strong password" autocomplete="new-password" required minlength="8" /></div>
-      <button class="btn btn-primary" type="submit" id="r-btn">Create Account</button>
+      <div class="field">
+        <label>Work email</label>
+        <input type="email" id="r-email" placeholder="you@company.com" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label>Password <span style="font-weight:400;color:var(--muted);font-size:.73rem">(min 8 characters)</span></label>
+        <input type="password" id="r-pass" placeholder="Choose a strong password" autocomplete="new-password" required minlength="8" />
+      </div>
+      <button class="btn btn-primary" type="submit" id="r-btn">Get started free</button>
     </form>
 
     <!-- Admin Registration (shown only via ?admin) -->
     <form id="f-admin-reg" style="display:none" onsubmit="doAdminRegister(event)">
-      <div class="field"><label>Email</label>
-        <input type="email" id="ar-email" placeholder="admin@company.com" autocomplete="email" required /></div>
-      <div class="field"><label>Password</label>
-        <input type="password" id="ar-pass" placeholder="••••••••" autocomplete="new-password" required minlength="8" /></div>
-      <div class="field"><label>Admin Setup Key</label>
-        <input type="password" id="ar-key" placeholder="Secret key from .env" required /></div>
-      <button class="btn btn-primary" type="submit" id="ar-btn">Create Admin Account</button>
+      <div class="field">
+        <label>Admin email</label>
+        <input type="email" id="ar-email" placeholder="admin@company.com" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="ar-pass" placeholder="••••••••" autocomplete="new-password" required minlength="8" />
+      </div>
+      <div class="field">
+        <label>Admin setup key</label>
+        <input type="password" id="ar-key" placeholder="Secret key from .env" required />
+      </div>
+      <button class="btn btn-primary" type="submit" id="ar-btn">Create admin account</button>
     </form>
   </div>
 </div>
 
 <!-- ══════════════════════════ CUSTOMER VIEW ══════════════════════ -->
 <div id="v-customer">
+
+  <!-- Top navigation bar -->
+  <nav class="topnav">
+    <a class="topnav-logo" href="#">
+      <div class="topnav-logo-icon">T</div>
+      Track<span>Sense</span>
+    </a>
+    <div class="topnav-divider"></div>
+
+    <!-- Project switcher -->
+    <div class="topnav-project-picker" id="cust-project-picker">
+      <div class="topnav-project-icon">⚡</div>
+      <select class="topnav-project-select" id="cust-topnav-project"
+        onchange="_analyticsProjectId=this.value;localStorage.setItem('ts_project',this.value);destroyCharts();fetchAndRenderAnalytics()">
+      </select>
+    </div>
+
+    <div class="topnav-right">
+      <div class="topnav-refresh-indicator" id="cust-refresh-indicator" style="display:none">
+        <span class="rdot" id="rdot-cust"></span>
+        <span id="rdot-time">—</span>
+      </div>
+      <div class="topnav-user">
+        <div class="topnav-avatar" id="cust-avatar">?</div>
+        <span id="cust-email-label" style="font-size:.8rem;font-weight:500;color:var(--muted)">—</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Sign out</button>
+    </div>
+  </nav>
+
   <div class="shell">
     <aside class="sidebar">
-      <div class="sb-logo">Track<span>Sense</span>
-        <div class="sb-logo-sub">Customer Portal</div>
-      </div>
-      <div class="sb-nav">
+      <nav class="sb-nav">
         <div class="sb-section">Analytics</div>
-        <button class="sb-item active" id="sb-analytics"   onclick="custNav('analytics')">
-          <span class="sb-icon">📊</span> Dashboard
+        <button class="sb-item active" id="sb-analytics" onclick="custNav('analytics')">
+          <span class="sb-icon">📊</span> Overview
         </button>
-        <button class="sb-item"        id="sb-goals"       onclick="custNav('goals')">
-          <span class="sb-icon">🎯</span> Goals
+        <button class="sb-item" id="sb-sessions" onclick="custNav('sessions')">
+          <span class="sb-icon">▶</span> Sessions
         </button>
-        <button class="sb-item"        id="sb-funnels"     onclick="custNav('funnels')">
-          <span class="sb-icon">🌊</span> Funnels
+        <button class="sb-item" id="sb-retention" onclick="custNav('retention')">
+          <span class="sb-icon">↩</span> Retention
         </button>
-        <button class="sb-item"        id="sb-heatmap"     onclick="custNav('heatmap')">
-          <span class="sb-icon">🔥</span> Heatmap
+
+        <div class="sb-section">Analysis</div>
+        <button class="sb-item" id="sb-funnels" onclick="custNav('funnels')">
+          <span class="sb-icon">⬇</span> Funnels
         </button>
-        <button class="sb-item"        id="sb-sessions"    onclick="custNav('sessions')">
-          <span class="sb-icon">🎬</span> Sessions
+        <button class="sb-item" id="sb-goals" onclick="custNav('goals')">
+          <span class="sb-icon">◎</span> Goals
         </button>
-        <button class="sb-item"        id="sb-retention"   onclick="custNav('retention')">
-          <span class="sb-icon">📅</span> Retention
+        <button class="sb-item" id="sb-ab" onclick="custNav('ab')">
+          <span class="sb-icon">⚖</span> A/B Tests
         </button>
-        <button class="sb-item"        id="sb-ab"          onclick="custNav('ab')">
-          <span class="sb-icon">🧪</span> A/B Tests
+        <button class="sb-item" id="sb-heatmap" onclick="custNav('heatmap')">
+          <span class="sb-icon">▦</span> Heatmaps
         </button>
+
         <div class="sb-section">Settings</div>
-        <button class="sb-item"        id="sb-projects"    onclick="custNav('projects')">
-          <span class="sb-icon">🗂️</span> My Projects
+        <button class="sb-item" id="sb-projects" onclick="custNav('projects')">
+          <span class="sb-icon">⚙</span> Projects &amp; API
         </button>
-      </div>
+      </nav>
+
       <div class="sb-footer">
-        <div class="sb-email" id="cust-email-label">—</div>
-        <div class="sb-role role-customer">● Customer</div>
-        <button class="btn btn-ghost btn-sm" onclick="logout()" style="margin-top:.2rem">Sign Out</button>
+        <div class="sb-footer-user">
+          <div class="topnav-avatar" id="cust-avatar-2" style="width:32px;height:32px;font-size:.8rem">?</div>
+          <div>
+            <div class="sb-email" id="cust-email-label-2">—</div>
+            <div class="sb-role">Customer</div>
+          </div>
+        </div>
       </div>
     </aside>
+
     <div class="app-main" id="cust-main"></div>
   </div>
 </div>
 
 <!-- ══════════════════════════ ADMIN VIEW ════════════════════════ -->
 <div id="v-admin">
+
+  <!-- Top navigation bar -->
+  <nav class="topnav">
+    <a class="topnav-logo" href="#">
+      <div class="topnav-logo-icon">T</div>
+      Track<span>Sense</span>
+    </a>
+    <div class="topnav-divider"></div>
+    <span style="font-size:.78rem;font-weight:700;color:var(--yellow);background:#fffaeb;border:1px solid #fde68a;border-radius:5px;padding:.15rem .5rem;letter-spacing:.04em;text-transform:uppercase">Admin</span>
+
+    <div class="topnav-right">
+      <div class="topnav-user">
+        <div class="topnav-avatar" id="admin-avatar" style="background:linear-gradient(135deg,#f79009,#ef4444)">A</div>
+        <span id="admin-email-label" style="font-size:.8rem;font-weight:500;color:var(--muted)">—</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Sign out</button>
+    </div>
+  </nav>
+
   <div class="shell">
     <aside class="sidebar">
-      <div class="sb-logo">Track<span>Sense</span>
-        <div class="sb-logo-sub">Admin Panel</div>
-      </div>
-      <div class="sb-nav">
+      <nav class="sb-nav">
         <div class="sb-section">Platform</div>
-        <button class="sb-item active" id="sb-admin-overview"   onclick="adminNav('overview')">
+        <button class="sb-item active" id="sb-admin-overview" onclick="adminNav('overview')">
           <span class="sb-icon">⚡</span> Overview
         </button>
-        <button class="sb-item"        id="sb-admin-customers" onclick="adminNav('customers')">
+        <button class="sb-item" id="sb-admin-customers" onclick="adminNav('customers')">
           <span class="sb-icon">👥</span> Customers
         </button>
-      </div>
+      </nav>
       <div class="sb-footer">
-        <div class="sb-email" id="admin-email-label">—</div>
-        <div class="sb-role role-admin">★ Admin</div>
-        <button class="btn btn-ghost btn-sm" onclick="logout()" style="margin-top:.2rem">Sign Out</button>
+        <div class="sb-footer-user">
+          <div class="topnav-avatar" style="width:32px;height:32px;font-size:.8rem;background:linear-gradient(135deg,#f79009,#ef4444)">A</div>
+          <div>
+            <div class="sb-email" id="admin-email-label-2">—</div>
+            <div class="sb-role">Admin</div>
+          </div>
+        </div>
       </div>
     </aside>
     <div class="app-main" id="admin-main"></div>
