@@ -6,7 +6,7 @@
 require('dotenv').config();
 const http = require('http');
 
-const API_KEY = 'pk_live_974f1b4feb3a8fa583766ab6b236ca77aab83bc2ea3b3abe';
+const API_KEY = 'pk_live_ab9544deaa560d1080b1655ffc5377d66dd3602fda8ba06a';
 const BASE    = 'http://localhost:5000';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
