@@ -5,8 +5,11 @@
  *
  * Usage (add to your site's <head>):
  *
- *   <script>window.SI_PROJECT_KEY = 'pk_live_YOUR_API_KEY';</script>
- *   <script src="http://localhost:5000/tracker.js"></script>
+ *   <script>
+ *     window.SI_PROJECT_KEY = 'pk_live_YOUR_API_KEY';
+ *     window.SI_ENDPOINT   = 'https://your-backend.com/track'; // omit for localhost dev
+ *   </script>
+ *   <script src="https://your-backend.com/tracker.js"></script>
  *
  * HTML attributes (zero JS needed):
  *   data-si-track="label"             — fires element_viewed when scrolled into view
@@ -36,7 +39,7 @@
   'use strict';
 
   // ── Configuration ────────────────────────────────────────────────────────────
-  var ENDPOINT          = 'http://localhost:5000/track';
+  var ENDPOINT          = window.SI_ENDPOINT || 'http://localhost:5000/track';
   var BATCH_INTERVAL    = 3000;
   var SESSION_KEY       = 'si_session_id';
   var SCROLL_KEY        = 'si_scroll_fired';
@@ -51,6 +54,9 @@
 
   // ── API Key ───────────────────────────────────────────────────────────────────
   var PROJECT_KEY = window.SI_PROJECT_KEY || '';
+  if (!window.SI_ENDPOINT && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    console.warn('[StartupInsight AI] window.SI_ENDPOINT is not set. Tracking will fail on deployed sites. Set it to your backend URL, e.g.: window.SI_ENDPOINT = "https://your-backend.com/track"');
+  }
 
   if (!PROJECT_KEY) {
     console.warn('[StartupInsight AI] No project key found. Set window.SI_PROJECT_KEY before loading tracker.js');

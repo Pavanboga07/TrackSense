@@ -162,4 +162,83 @@ router.get('/:id/results', (req, res) => {
   }
 });
 
+
+// ── Suggestions ───────────────────────────────────────────────────────────────
+
+/**
+ * GET /funnels/suggestions?projectId=xxx[&days=30][&minFreq=3]
+ *
+ * Analyses page_view journeys from the last N days and returns the top 5
+ * most common 3-step (or 2- / 4-step) page sequences not already saved.
+ *
+ * Response: { suggestions: [{ steps: [...], frequency, alreadySaved }] }
+ */
+router.get('/suggestions', (req, res) => {
+  const { projectId } = req.query;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+
+  try {
+    projectService.getProject(projectId, req.user.id);
+
+    const days    = Math.min(Number(req.query.days) || 30, 90);
+    const minFreq = Math.max(Number(req.query.minFreq) || 2, 2);
+    const since   = new Date(Date.now() - days * 86400000).toISOString();
+
+    // ── 1. Load page_view events grouped by session ──────────────────────────
+    const rows = db.all(
+      `SELECT session_id, page, timestamp FROM events
+       WHERE project_id=? AND event='page_view' AND timestamp>=?
+         AND page IS NOT NULL AND page != ''
+       ORDER BY session_id, timestamp ASC`,
+      [projectId, since]
+    );
+
+    const sessions = {};
+    rows.forEach(r => {
+      if (!sessions[r.session_id]) sessions[r.session_id] = [];
+      // De-dupe consecutive same-page entries
+      const arr = sessions[r.session_id];
+      if (arr.length === 0 || arr[arr.length - 1] !== r.page) {
+        arr.push(r.page);
+      }
+    });
+
+    // ── 2. Count N-gram sequences (length 2, 3, 4) ──────────────────────────
+    const ngramCounts = {}; // key → count
+
+    Object.values(sessions).forEach(pages => {
+      for (let n = 2; n <= Math.min(4, pages.length); n++) {
+        for (let i = 0; i <= pages.length - n; i++) {
+          const key = pages.slice(i, i + n).join(' → ');
+          ngramCounts[key] = (ngramCounts[key] || 0) + 1;
+        }
+      }
+    });
+
+    // ── 3. Fetch existing funnel step-sets for dedup ─────────────────────────
+    const existingFunnels = db.all('SELECT steps FROM funnels WHERE project_id=?', [projectId]);
+    const savedKeys = new Set(
+      existingFunnels.map(f => {
+        try { return JSON.parse(f.steps).join(' → '); } catch { return ''; }
+      })
+    );
+
+    // ── 4. Sort and pick top 5 multi-page suggestions ────────────────────────
+    const suggestions = Object.entries(ngramCounts)
+      .filter(([key, freq]) => freq >= minFreq && !savedKeys.has(key))
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([key, frequency]) => ({
+        steps:       key.split(' → '),
+        frequency,
+        alreadySaved: false,
+      }));
+
+    res.json({ suggestions, days });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+

@@ -223,7 +223,7 @@ async function boot() {
 
 /* ──────────────────────── Customer Navigation ────────────────────── */
 function custNav(page) {
-  const pages = ['analytics','goals','funnels','heatmap','sessions','retention','ab','projects'];
+  const pages = ['analytics','goals','funnels','sessions','retention','projects','friction','users'];
   pages.forEach(p=>{
     document.getElementById('sb-'+p)?.classList.toggle('active', p===page);
   });
@@ -242,6 +242,8 @@ function custNav(page) {
   else if(page==='sessions')  loadSessions();
   else if(page==='retention') loadRetention();
   else if(page==='ab')        loadAb();
+  else if(page==='friction')  loadFriction();
+  else if(page==='users')     loadUsers();
   else loadProjects();
 }
 
@@ -372,12 +374,16 @@ async function doDeleteProject(id, name) {
 }
 
 function showEmbedModal(apiKey, projectName) {
+  const backendUrl = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
+    ? 'http://localhost:5000'
+    : window.location.origin.replace(/:\d+$/, '');
   const snippet =
 `<!-- TrackSense — ${projectName} -->
 <script>
   window.SI_PROJECT_KEY = '${apiKey}';
+  window.SI_ENDPOINT   = '${backendUrl}/track';
 <\/script>
-<script src="http://localhost:5000/tracker.js"><\/script>`;
+<script src="${backendUrl}/tracker.js"><\/script>`;
 
   openModal('Install tracking snippet', `
     <p style="font-size:.84rem;color:var(--muted);margin-bottom:1rem;line-height:1.6">
@@ -698,12 +704,15 @@ async function loadGoals() {
   if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
   setMain('cust', loader());
   try {
-    const data = await api(`/goals?projectId=${_analyticsProjectId}`);
-    renderGoalsPage(data.goals||[]);
+    const [goalsData, suggestData] = await Promise.all([
+      api(`/goals?projectId=${_analyticsProjectId}`),
+      api(`/goals/suggestions?projectId=${_analyticsProjectId}`).catch(()=>({suggestions:[]})),
+    ]);
+    renderGoalsPage(goalsData.goals||[], suggestData.suggestions||[]);
   } catch(err) { handleFetchError('cust', err); }
 }
 
-function renderGoalsPage(goals) {
+function renderGoalsPage(goals, suggestions=[]) {
   const rows = goals.map(g=>`
     <div class="proj-card" style="gap:.5rem">
       <div>
@@ -719,6 +728,35 @@ function renderGoalsPage(goals) {
       </div>
     </div>`).join('');
 
+  // ── Suggestions section ─────────────────────────────────────────────────
+  const pending = suggestions.filter(s=>!s.alreadySaved);
+  const suggestHtml = pending.length === 0 ? '' : `
+    <div style="margin-top:2rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.875rem">
+        <span style="font-size:1.1rem">✨</span>
+        <h2 style="font-size:1rem;font-weight:700;color:var(--text);margin:0">Smart Suggestions</h2>
+        <span style="font-size:.73rem;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:.15rem .6rem">Detected from your event data</span>
+      </div>
+      <div class="proj-grid">
+        ${pending.map(s=>`
+          <div class="proj-card" style="gap:.5rem;border-left:3px solid var(--accent)">
+            <div style="flex:1">
+              <div class="proj-name" style="display:flex;align-items:center;gap:.4rem">
+                <span>${esc(s.goalName)}</span>
+                <span style="font-size:.68rem;background:var(--accent);color:#fff;border-radius:20px;padding:.1rem .5rem">✨ suggested</span>
+              </div>
+              <div class="proj-date">
+                Event: <code>${esc(s.eventName)}</code>
+                · seen <strong>${s.count}</strong> times
+                ${s.samplePages&&s.samplePages.length ? ' · on '+s.samplePages.map(p=>`<code>${esc(p)}</code>`).join(', ') : ''}
+              </div>
+            </div>
+            <button class="btn btn-solid btn-sm"
+              onclick='createGoalFromSuggestion(${JSON.stringify(s)})'>+ Create Goal</button>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
   setMain('cust', `
     <div class="page-content">
       <div class="page-hdr">
@@ -731,7 +769,21 @@ function renderGoalsPage(goals) {
       ${goals.length===0
         ? `<div class="empty-box"><div style="font-size:2rem;margin-bottom:.5rem">🎯</div><h3>No goals yet</h3><p>Create a goal to track conversions.</p></div>`
         : `<div class="proj-grid">${rows}</div>`}
+      ${suggestHtml}
     </div>`);
+}
+
+async function createGoalFromSuggestion(s) {
+  try {
+    await api('/goals',{method:'POST',body:{
+      projectId: _analyticsProjectId,
+      name:      s.goalName,
+      eventName: s.eventName,
+      conditions: s.conditions || (s.eventName==='goal_triggered' ? {goal_name:s.goalName} : {}),
+    }});
+    loadGoals();
+    showToast('Goal "'+s.goalName+'" created!');
+  } catch(err) { showToast('Error: '+err.message); }
 }
 
 function showNewGoalModal() {
@@ -814,12 +866,15 @@ async function loadFunnels() {
   if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
   setMain('cust', loader());
   try {
-    const data = await api(`/funnels?projectId=${_analyticsProjectId}`);
-    renderFunnelsPage(data.funnels||[]);
+    const [funnelsData, suggestData] = await Promise.all([
+      api(`/funnels?projectId=${_analyticsProjectId}`),
+      api(`/funnels/suggestions?projectId=${_analyticsProjectId}`).catch(()=>({suggestions:[]})),
+    ]);
+    renderFunnelsPage(funnelsData.funnels||[], suggestData.suggestions||[]);
   } catch(err) { handleFetchError('cust', err); }
 }
 
-function renderFunnelsPage(funnels) {
+function renderFunnelsPage(funnels, suggestions=[]) {
   const rows = funnels.map(f=>`
     <tr>
       <td>
@@ -843,6 +898,42 @@ function renderFunnelsPage(funnels) {
       </td>
     </tr>`).join('');
 
+  // ── Suggestions section ─────────────────────────────────────────────────
+  const pending = suggestions.filter(s=>!s.alreadySaved);
+  const suggestHtml = pending.length === 0 ? '' : `
+    <div style="margin-top:2rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.875rem">
+        <span style="font-size:1.1rem">✨</span>
+        <h2 style="font-size:1rem;font-weight:700;color:var(--text);margin:0">Smart Funnel Suggestions</h2>
+        <span style="font-size:.73rem;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:.15rem .6rem">Detected from real user journeys</span>
+      </div>
+      <div class="table-card">
+        <div class="tbl-scroll">
+          <table>
+            <thead><tr><th>Suggested Path</th><th>Sessions</th><th></th></tr></thead>
+            <tbody>
+              ${pending.map(s=>`
+                <tr>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
+                      ${s.steps.map((step,i)=>`
+                        ${i>0?'<span style="color:var(--muted2);font-size:.75rem">&rarr;</span>':''}
+                        <code style="background:var(--surface2);border:1px solid var(--border);padding:.15rem .4rem;border-radius:5px;font-size:.72rem">${esc(step)}</code>
+                      `).join('')}
+                    </div>
+                  </td>
+                  <td style="color:var(--muted)">${s.frequency} sessions followed this path</td>
+                  <td>
+                    <button class="btn btn-solid btn-sm"
+                      onclick='createFunnelFromSuggestion(${JSON.stringify(s)})'>+ Create Funnel</button>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+
   setMain('cust', `
     <div class="page-content">
       <div class="page-hdr">
@@ -857,7 +948,17 @@ function renderFunnelsPage(funnels) {
       ${funnels.length===0
         ? `<div class="empty-box"><div class="empty-box-icon">&#8681;</div><h3>No funnels yet</h3><p>Build a funnel using page paths to measure conversion drop-off through your key user flows.</p></div>`
         : `<div class="table-card"><div class="tbl-scroll"><table><thead><tr><th>Funnel</th><th>Steps</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`}
+      ${suggestHtml}
     </div>`);
+}
+
+async function createFunnelFromSuggestion(s) {
+  const name = s.steps.join(' → ');
+  try {
+    await api('/funnels',{method:'POST',body:{ projectId:_analyticsProjectId, name, steps:s.steps }});
+    loadFunnels();
+    showToast('Funnel created!');
+  } catch(err) { showToast('Error: '+err.message); }
 }
 
 function showNewFunnelModal() {
@@ -1503,6 +1604,291 @@ async function toggleCustomerDetail(id) {
   } catch(err) {
     content.innerHTML=`<div style="color:var(--red);font-size:.82rem">${esc(err.message)}</div>`;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   FRICTION MAP
+   ════════════════════════════════════════════════════════════════ */
+async function loadFriction() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  setMain('cust', loader());
+  try {
+    const data = await api(`/friction?projectId=${_analyticsProjectId}&days=30`);
+    renderFrictionPage(data.pages||[], data.days||30);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderFrictionPage(pages, days) {
+  const frictionColor = score => {
+    if (score >= 60) return '#f04438';   // red — high friction
+    if (score >= 30) return '#f79009';   // amber — medium
+    if (score >= 10) return '#eab308';   // yellow — low
+    return '#12b76a';                    // green — minimal
+  };
+  const frictionLabel = score => {
+    if (score >= 60) return 'High';
+    if (score >= 30) return 'Medium';
+    if (score >= 10) return 'Low';
+    return 'Minimal';
+  };
+
+  const rows = pages.map(p=>{
+    const col = frictionColor(p.frictionScore);
+    const lbl = frictionLabel(p.frictionScore);
+    const scrollCell = p.avgScrollDepth !== null
+      ? `<div style="display:flex;align-items:center;gap:.4rem">
+           <div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
+             <div style="width:${p.avgScrollDepth}%;height:100%;background:var(--accent);border-radius:3px"></div>
+           </div>
+           <span style="font-size:.72rem;color:var(--muted)">${p.avgScrollDepth}%</span>
+         </div>`
+      : '<span style="color:var(--muted2);font-size:.75rem">—</span>';
+
+    return `
+      <tr>
+        <td>
+          <code style="font-size:.78rem;color:var(--cyan)">${esc(p.page)}</code>
+        </td>
+        <td style="text-align:center">
+          <div style="display:inline-flex;align-items:center;gap:.4rem">
+            <div style="width:48px;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
+              <div style="width:${p.frictionScore}%;height:100%;background:${col};border-radius:4px"></div>
+            </div>
+            <span style="font-size:.8rem;font-weight:700;color:${col}">${p.frictionScore}</span>
+            <span style="font-size:.68rem;color:${col};background:${col}22;padding:.1rem .45rem;border-radius:20px">${lbl}</span>
+          </div>
+        </td>
+        <td style="text-align:center;color:${p.rageClicks>0?'#f04438':'var(--muted)'}">
+          ${p.rageClicks > 0 ? '😡 ' : ''}${p.rageClicks}
+        </td>
+        <td style="text-align:center;color:${p.jsErrors>0?'#f79009':'var(--muted)'}">
+          ${p.jsErrors > 0 ? '⚠️ ' : ''}${p.jsErrors}
+        </td>
+        <td style="text-align:center;color:${p.formAbandons>0?'#eab308':'var(--muted)'}">
+          ${p.formAbandons > 0 ? '📝 ' : ''}${p.formAbandons}
+        </td>
+        <td style="min-width:120px">${scrollCell}</td>
+        <td style="text-align:center;color:var(--muted);font-size:.78rem">${p.bounceRate}%</td>
+        <td style="text-align:center;color:var(--muted);font-size:.78rem">${fmt(p.pageViews)}</td>
+      </tr>`;
+  }).join('');
+
+  setMain('cust', `
+    <div class="page-content">
+      <div class="page-hdr">
+        <div class="page-hdr-left">
+          <h1 class="page-title">🔥 Friction Map</h1>
+          <p class="page-subtitle">Pages with the highest user struggle signals · last ${days} days</p>
+        </div>
+      </div>
+      ${pages.length === 0 ? `
+        <div class="empty-box">
+          <div class="empty-box-icon">🔥</div>
+          <h3>No friction data yet</h3>
+          <p>Friction signals (rage clicks, JS errors, form abandons) will appear once your tracker captures enough events.</p>
+        </div>
+      ` : `
+        <div class="table-card">
+          <div class="tbl-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th style="text-align:center">Friction Score</th>
+                  <th style="text-align:center" title="Rage clicks — user clicked same area repeatedly">😡 Rage Clicks</th>
+                  <th style="text-align:center" title="JavaScript errors">⚠️ JS Errors</th>
+                  <th style="text-align:center" title="Form abandons — started but never submitted">📝 Form Abandons</th>
+                  <th title="Average % of page scrolled">Avg Scroll</th>
+                  <th style="text-align:center" title="Sessions spending under 5 seconds on page">Bounce Rate</th>
+                  <th style="text-align:center">Page Views</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div style="margin-top:.75rem;font-size:.73rem;color:var(--muted)">
+          Friction Score = weighted composite: rage clicks (35%) + JS errors (30%) + form abandons (20%) + low scroll depth (8%) + bounce rate (7%).
+          Higher = more friction. Rows sorted high → low.
+        </div>
+      `}
+    </div>`);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   USERS
+   ════════════════════════════════════════════════════════════════ */
+let _usersSearch = '';
+let _usersOffset = 0;
+const _usersLimit = 50;
+
+async function loadUsers(offset=0) {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  _usersOffset = offset;
+  if(offset===0) setMain('cust', loader());
+  try {
+    const q = _usersSearch ? '&q='+encodeURIComponent(_usersSearch) : '';
+    const data = await api(`/users?projectId=${_analyticsProjectId}&limit=${_usersLimit}&offset=${offset}${q}`);
+    renderUsersPage(data.users||[], data.total||0, offset);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function renderUsersPage(users, total, offset) {
+  const rows = users.map(u=>`
+    <tr style="cursor:pointer" onclick="showUserProfile('${esc(u.user_id)}')">
+      <td>
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:#fff;flex-shrink:0">
+            ${esc((u.user_id||'?')[0].toUpperCase())}
+          </div>
+          <code style="font-size:.78rem;color:var(--cyan)">${esc(u.user_id)}</code>
+        </div>
+      </td>
+      <td style="text-align:center;color:var(--text)">${u.sessions}</td>
+      <td style="text-align:center;color:var(--text)">${fmt(u.totalEvents)}</td>
+      <td style="color:var(--muted);font-size:.75rem">${fmtDate(u.firstSeen)}</td>
+      <td style="color:var(--muted);font-size:.75rem">${fmtDate(u.lastSeen)}</td>
+      <td style="text-align:right">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showUserProfile('${esc(u.user_id)}')">View →</button>
+      </td>
+    </tr>`).join('');
+
+  const hasPrev = offset > 0;
+  const hasNext = offset + _usersLimit < total;
+
+  setMain('cust', `
+    <div class="page-content">
+      <div class="page-hdr">
+        <div class="page-hdr-left">
+          <h1 class="page-title">👥 Users</h1>
+          <p class="page-subtitle">Identified users who called <code>SI.identify()</code></p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+        <input type="text" id="users-search" placeholder="Search user ID…"
+          value="${esc(_usersSearch)}"
+          style="width:100%;max-width:280px;background:var(--surface2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.45rem .75rem;font-size:.83rem;outline:none"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+          oninput="_usersSearch=this.value;clearTimeout(_usersSearchTimer);_usersSearchTimer=setTimeout(()=>loadUsers(0),400)"
+        />
+        <span style="font-size:.78rem;color:var(--muted)">${fmt(total)} user${total!==1?'s':''}</span>
+      </div>
+      ${users.length === 0 ? `
+        <div class="empty-box">
+          <div class="empty-box-icon">👥</div>
+          <h3>No identified users yet</h3>
+          <p>Call <code>SI.identify('user-id')</code> in your tracker script to start profiling individual users.</p>
+        </div>
+      ` : `
+        <div class="table-card">
+          <div class="tbl-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th style="text-align:center">Sessions</th>
+                  <th style="text-align:center">Events</th>
+                  <th>First Seen</th>
+                  <th>Last Seen</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center;justify-content:flex-end;margin-top:.75rem">
+          <span style="font-size:.75rem;color:var(--muted)">
+            ${offset+1}–${Math.min(offset+_usersLimit,total)} of ${fmt(total)}
+          </span>
+          <button class="btn btn-ghost btn-sm" ${hasPrev?'':'disabled'} onclick="loadUsers(${offset-_usersLimit})">← Prev</button>
+          <button class="btn btn-ghost btn-sm" ${hasNext?'':'disabled'} onclick="loadUsers(${offset+_usersLimit})">Next →</button>
+        </div>
+      `}
+    </div>`);
+}
+
+let _usersSearchTimer = null;
+
+async function showUserProfile(userId) {
+  openModal('User: '+userId, `<div id="up-wrap" style="min-height:200px">${loader()}</div>`);
+  try {
+    const d = await api(`/users/${encodeURIComponent(userId)}?projectId=${_analyticsProjectId}`);
+    const u = d.user || {};
+    const sessions = d.sessions || [];
+
+    const sessionHtml = sessions.map((sess,idx)=>{
+      const eventRows = sess.events.slice(0,30).map(ev=>`
+        <tr>
+          <td style="color:var(--muted);font-size:.7rem;white-space:nowrap">${fmtTs(ev.timestamp)}</td>
+          <td><span style="font-size:.72rem;background:var(--surface2);border:1px solid var(--border);padding:.1rem .4rem;border-radius:4px;color:var(--cyan)">${esc(ev.event)}</span></td>
+          <td style="font-size:.75rem;color:var(--text)">${esc(ev.page||'—')}</td>
+          <td style="font-size:.72rem;color:var(--muted)">${esc(ev.element||'')}</td>
+        </tr>`).join('');
+      const moreCount = sess.events.length - 30;
+      return `
+        <div style="margin-bottom:.875rem">
+          <div style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.4rem 0;border-bottom:1px solid var(--border)"
+            onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            <span style="font-size:.68rem;background:var(--accent);color:#fff;border-radius:3px;padding:.1rem .4rem">${idx+1}</span>
+            <span style="font-size:.78rem;font-weight:600;color:var(--text)">Session ${esc(sess.sessionId.slice(-8))}</span>
+            <span style="font-size:.72rem;color:var(--muted)">
+              ${fmtDate(sess.firstTs)} · ${sess.events.length} events
+            </span>
+            <span style="margin-left:auto;font-size:.75rem;color:var(--muted2)">▾</span>
+          </div>
+          <div style="display:${idx===0?'block':'none'};overflow:auto;margin-top:.4rem">
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <th style="font-size:.7rem;padding:.25rem .4rem;color:var(--muted);font-weight:600;text-align:left">Time</th>
+                <th style="font-size:.7rem;padding:.25rem .4rem;color:var(--muted);font-weight:600;text-align:left">Event</th>
+                <th style="font-size:.7rem;padding:.25rem .4rem;color:var(--muted);font-weight:600;text-align:left">Page</th>
+                <th style="font-size:.7rem;padding:.25rem .4rem;color:var(--muted);font-weight:600;text-align:left">Element</th>
+              </tr></thead>
+              <tbody>${eventRows}</tbody>
+            </table>
+            ${moreCount>0?`<div style="font-size:.72rem;color:var(--muted);padding:.4rem">${moreCount} more events not shown</div>`:''}
+          </div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('up-wrap').innerHTML = `
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.25rem">
+        <div class="kpi-card" style="padding:.7rem .875rem">
+          <div class="kpi-label">Sessions</div>
+          <div class="kpi-val" style="font-size:1.5rem">${u.sessions||0}</div>
+        </div>
+        <div class="kpi-card" style="padding:.7rem .875rem">
+          <div class="kpi-label">Total Events</div>
+          <div class="kpi-val" style="font-size:1.5rem">${fmt(u.totalEvents||0)}</div>
+        </div>
+        <div class="kpi-card" style="padding:.7rem .875rem">
+          <div class="kpi-label">First Seen</div>
+          <div class="kpi-val" style="font-size:.9rem">${fmtDate(u.firstSeen)}</div>
+        </div>
+        <div class="kpi-card" style="padding:.7rem .875rem">
+          <div class="kpi-label">Last Seen</div>
+          <div class="kpi-val" style="font-size:.9rem">${fmtDate(u.lastSeen)}</div>
+        </div>
+      </div>
+      <div style="font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:.6rem">Session History (newest first)</div>
+      <div style="max-height:400px;overflow-y:auto">
+        ${sessions.length===0
+          ? '<div style="color:var(--muted);font-size:.82rem">No sessions found.</div>'
+          : sessionHtml}
+      </div>`;
+  } catch(err) {
+    document.getElementById('up-wrap').innerHTML=`<div style="color:var(--red)">${esc(err.message)}</div>`;
+  }
+}
+
+function fmtTs(ts) {
+  if(!ts) return '—';
+  try {
+    const d = new Date(Number(ts) || ts);
+    if(isNaN(d.getTime())) return String(ts).slice(11,19) || '—';
+    return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch { return '—'; }
 }
 
 /* ──────────────────────── Modal ──────────────────────────────────── */

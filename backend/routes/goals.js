@@ -151,4 +151,96 @@ router.get('/:id/stats', (req, res) => {
   }
 });
 
+
+// ── Suggestions ───────────────────────────────────────────────────────────────
+
+/**
+ * GET /goals/suggestions?projectId=xxx[&days=60]
+ *
+ * Analyses the last N days of `goal_triggered` events and repetitive custom
+ * events and returns up to 10 suggested goals that don't already exist.
+ *
+ * Response: { suggestions: [{ goal_name, eventName, count, samplePages, alreadySaved }] }
+ */
+router.get('/suggestions', (req, res) => {
+  const { projectId } = req.query;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+
+  try {
+    projectService.getProject(projectId, req.user.id);
+
+    const days  = Math.min(Number(req.query.days) || 60, 90);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+
+    // ── 1. Explicit goal_triggered events grouped by goal_name in metadata ──
+    const triggered = db.all(
+      `SELECT metadata, page FROM events
+       WHERE project_id=? AND event='goal_triggered' AND timestamp>=?`,
+      [projectId, since]
+    );
+
+    const nameMap = {}; // goal_name → { count, pages: Set }
+    triggered.forEach(r => {
+      try {
+        const m = JSON.parse(r.metadata);
+        const gn = String(m.goal_name || '').trim();
+        if (!gn) return;
+        if (!nameMap[gn]) nameMap[gn] = { count: 0, pages: new Set() };
+        nameMap[gn].count++;
+        if (r.page) nameMap[gn].pages.add(r.page);
+      } catch {}
+    });
+
+    // ── 2. High-frequency custom events that look like conversions ──────────
+    const highFreq = db.all(
+      `SELECT event, page, COUNT(*) as cnt FROM events
+       WHERE project_id=? AND timestamp>=?
+         AND event NOT IN ('page_view','click','rage_click','scroll_depth',
+                           'form_start','form_submit','form_abandon',
+                           'js_error','page_exit','session_start',
+                           'outbound_click','element_viewed','video_play',
+                           'page_performance','text_copy','tab_hidden',
+                           'tab_visible','goal_triggered')
+       GROUP BY event
+       HAVING cnt >= 3
+       ORDER BY cnt DESC
+       LIMIT 20`,
+      [projectId, since]
+    );
+
+    highFreq.forEach(r => {
+      const key = r.event;
+      if (!nameMap[key]) nameMap[key] = { count: 0, pages: new Set(), isCustomEvent: true };
+      nameMap[key].count  += r.cnt;
+      if (r.page) nameMap[key].pages.add(r.page);
+    });
+
+    // ── 3. Fetch existing goal names for this project ────────────────────────
+    const existingGoals = db.all('SELECT name, event_name FROM goals WHERE project_id=?', [projectId]);
+    const savedNames = new Set([
+      ...existingGoals.map(g => g.name.toLowerCase()),
+      ...existingGoals.map(g => (g.event_name || '').toLowerCase()),
+    ]);
+
+    // ── 4. Build suggestion list ─────────────────────────────────────────────
+    const suggestions = Object.entries(nameMap)
+      .filter(([name]) => name.length > 0)
+      .sort(([, a], [, b]) => b.count - a.count)
+      .slice(0, 10)
+      .map(([name, data]) => ({
+        goalName:     name,
+        eventName:    data.isCustomEvent ? name : 'goal_triggered',
+        conditions:   data.isCustomEvent ? {} : { goal_name: name },
+        count:        data.count,
+        samplePages:  [...data.pages].slice(0, 3),
+        alreadySaved: savedNames.has(name.toLowerCase()),
+      }));
+
+    res.json({ suggestions, days });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
+

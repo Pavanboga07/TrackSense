@@ -6,7 +6,7 @@
 require('dotenv').config();
 const http = require('http');
 
-const API_KEY = 'pk_live_974f1b4feb3a8fa583766ab6b236ca77aab83bc2ea3b3abe';
+const API_KEY = 'pk_live_8cbaac4a2bbb0a71289589f1a1dad84373a5ca396158e7c5';
 const BASE    = 'http://localhost:5000';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -210,7 +210,56 @@ async function main() {
   }
 
   console.log(`\n✓ Done! Sent ${sent} events. Errors: ${errors}`);
-  console.log(`\nLogin as pavanboga07@gmail.com and open the dashboard to see the data.`);
+
+  // ── Seed goals & funnels directly via DB ─────────────────────────────────
+  console.log('\nSeeding goals and funnels...');
+  const db      = require('./db');
+  const crypto  = require('crypto');
+  await db.init();
+
+  const project = db.get('SELECT id FROM projects WHERE api_key = ?', [API_KEY]);
+  if (!project) { console.error('Project not found, skipping goals/funnels.'); return; }
+  const pid = project.id;
+
+  const GOALS = [
+    { name: 'CTA Click (Pricing)',  event_name: 'goal_triggered', conditions: { goal_name: 'cta_click' } },
+    { name: 'Signup Completed',     event_name: 'goal_triggered', conditions: { goal_name: 'signup_completed' } },
+    { name: 'Demo Booked',          event_name: 'goal_triggered', conditions: { goal_name: 'demo_booked' } },
+    { name: 'Upgrade Clicked',      event_name: 'goal_triggered', conditions: { goal_name: 'upgrade_clicked' } },
+  ];
+
+  const FUNNELS = [
+    { name: 'Acquisition → Signup',          steps: ['/', '/pricing', '/signup'] },
+    { name: 'Blog → Discovery → Conversion', steps: ['/blog', '/features', '/pricing', '/signup'] },
+    { name: 'Trial Activation',              steps: ['/signup', '/dashboard', '/docs'] },
+  ];
+
+  const now7 = new Date(Date.now() - 7 * 86400000).toISOString();
+
+  GOALS.forEach(g => {
+    try {
+      db.run(
+        'INSERT OR IGNORE INTO goals (id,project_id,name,event_name,conditions,created_at) VALUES (?,?,?,?,?,?)',
+        [crypto.randomUUID(), pid, g.name, g.event_name, JSON.stringify(g.conditions), now7]
+      );
+    } catch (_) {}
+  });
+
+  FUNNELS.forEach(f => {
+    try {
+      db.run(
+        'INSERT OR IGNORE INTO funnels (id,project_id,name,steps,created_at) VALUES (?,?,?,?,?)',
+        [crypto.randomUUID(), pid, f.name, JSON.stringify(f.steps), now7]
+      );
+    } catch (_) {}
+  });
+
+  db.persist();
+
+  const gc = db.get('SELECT COUNT(*) as c FROM goals   WHERE project_id=?', [pid]);
+  const fc = db.get('SELECT COUNT(*) as c FROM funnels WHERE project_id=?', [pid]);
+  console.log(`✓ Goals: ${gc.c}  |  Funnels: ${fc.c}`);
+  console.log('\nAll done! Open the dashboard to see the data.');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

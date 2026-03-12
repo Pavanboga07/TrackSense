@@ -459,6 +459,8 @@
   (function () {
     var urlKey = new URLSearchParams(window.location.search).get('key');
     window.SI_PROJECT_KEY = urlKey || 'pk_live_a3f67a07c42f7b33781f6ea423ad79618396eae7b187a1de';
+    // Point to your deployed backend URL when not running locally
+    window.SI_ENDPOINT = 'http://localhost:5000/track';
   })();
 </script>
 <script src="http://localhost:5000/tracker.js"></script>

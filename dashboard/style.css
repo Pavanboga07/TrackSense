@@ -578,4 +578,4 @@ tbody tr:hover td { background:var(--surface2); }
   cursor:pointer; margin-bottom:-2px; transition:color .12s, border-color .12s; border-radius:6px 6px 0 0;
 }
 .page-tab:hover   { color:var(--text); background:var(--surface2); }
-.page-tab.active  { color:var(--accent); border-bottom-color:var(--accent); }\n
+.page-tab.active  { color:var(--accent); border-bottom-color:var(--accent); }
