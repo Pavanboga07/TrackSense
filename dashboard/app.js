@@ -8,6 +8,7 @@ let _charts = {};
 let _refreshTimer = null;
 let _customerProjects = [];
 let _analyticsProjectId = null;
+let _seoSitemapUrls = [];
 
 /* ──────────────────────── API Helper ─────────────────────────────── */
 async function api(path, opts = {}) {
@@ -223,11 +224,12 @@ async function boot() {
 
 /* ──────────────────────── Customer Navigation ────────────────────── */
 function custNav(page) {
-  const pages = ['analytics','goals','funnels','sessions','retention','projects','friction','users','ai','heatmap'];
+  const pages = ['analytics','goals','funnels','sessions','retention','projects','friction','users','ai','heatmap','seo'];
   pages.forEach(p=>{
     document.getElementById('sb-'+p)?.classList.toggle('active', p===page);
   });
   clearInterval(_refreshTimer);
+  destroyCharts();
 
   // Show/hide topnav project picker and refresh indicator
   const picker = document.getElementById('cust-project-picker');
@@ -243,6 +245,7 @@ function custNav(page) {
   else if(page==='retention') loadRetention();
   else if(page==='ab')        loadAb();
   else if(page==='friction')  loadFriction();
+  else if(page==='seo')       loadSEO();
   else if(page==='users')     loadUsers();
   else if(page==='ai')        loadAI();
   else loadProjects();
@@ -1247,12 +1250,18 @@ async function loadRetention() {
 
 function renderRetentionPage(cohorts) {
   if(!cohorts.length) {
-    setMain('cust',`<div class="page-content"><div class="empty-box"><div class="empty-box-icon">&#128197;</div><h3>No retention data yet</h3><p>Retention cohorts appear after users return across multiple weeks.</p></div></div>`);
+    setMain('cust',`<div class="page-content"><div class="empty-box"><div class="empty-box-icon">&#128197;</div><h3>No retention data yet</h3><p>Retention data appears after users return across multiple weeks. Keep tracking visitors!</p></div></div>`);
     return;
   }
   const maxWeeks = Math.max(...cohorts.map(c=>c.retention.length));
 
-  const hdrCols = Array.from({length:maxWeeks},(_,i)=>`<th style="min-width:52px;text-align:center">Wk +${i}</th>`).join('');
+  const hdrCols = Array.from({length:maxWeeks},(_,i)=>{
+    let label;
+    if(i===0) label = 'Same week';
+    else if(i===1) label = '1 week later';
+    else label = `${i} weeks later`;
+    return `<th style="min-width:80px;text-align:center"><small>${label}</small></th>`;
+  }).join('');
 
   const rows = cohorts.map(c=>{
     const cells = Array.from({length:maxWeeks},(_,i)=>{
@@ -1272,20 +1281,35 @@ function renderRetentionPage(cohorts) {
     <div class="page-content">
       <div class="page-hdr">
         <div class="page-hdr-left">
-          <h1 class="page-title">Retention</h1>
-          <p class="page-subtitle">Weekly cohort retention — % of users returning in subsequent weeks</p>
+          <h1 class="page-title">User Retention</h1>
+          <p class="page-subtitle">See how many of your users come back after their first visit</p>
         </div>
         <div class="page-hdr-actions">
           <button class="btn btn-ghost btn-sm" onclick="loadRetention()">&#8635; Refresh</button>
         </div>
       </div>
+
+      <div style="background:#f8f6ff;border:1px solid #e8e4ff;border-radius:6px;padding:16px;margin-bottom:20px;font-size:.9rem;line-height:1.6">
+        <strong>📖 How to read this:</strong>
+        <ul style="margin:10px 0 0 20px">
+          <li><strong>Left column (Signup week):</strong> The week when new people first visited your site</li>
+          <li><strong>Second column (New visitors):</strong> How many new people signed up that week</li>
+          <li><strong>Color cells:</strong> The percentage (%) of those visitors who came back later. Darker color = more people returned!</li>
+          <li><strong>Example:</strong> If "Same week" shows 100%, all new visitors visited again the same week. If "1 week later" shows 45%, only 45% came back after 1 week.</li>
+        </ul>
+      </div>
+
       <div class="table-card">
         <div class="tbl-scroll" style="overflow-x:auto"><table>
           <thead><tr>
-            <th>Cohort week</th><th style="min-width:60px;text-align:center">New sessions</th>${hdrCols}
+            <th>Signup week</th><th style="min-width:80px;text-align:center">New visitors</th>${hdrCols}
           </tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
+      </div>
+
+      <div style="background:#fff9e6;border:1px solid #ffe699;border-radius:6px;padding:12px;margin-top:16px;font-size:.85rem">
+        <strong>💡 Tip:</strong> Higher percentages mean users love coming back! If numbers drop fast, try improving what keeps users engaged.
       </div>
     </div>`);
 }
@@ -1722,6 +1746,284 @@ function renderFrictionPage(pages, days) {
         </div>
       `}
     </div>`);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SEO HEALTH
+   ════════════════════════════════════════════════════════════════ */
+async function loadSEO() {
+  if(!_analyticsProjectId) { await _ensureProject(); if(!_analyticsProjectId) return; }
+  _seoSitemapUrls = [];
+  setMain('cust', loader());
+  try {
+    const data = await api(`/seo/summary?projectId=${_analyticsProjectId}&days=30`);
+    renderSEOPage(data);
+  } catch(err) { handleFetchError('cust', err); }
+}
+
+function downloadSitemap() {
+  if(!_seoSitemapUrls.length) {
+    showToast('No sitemap URLs available yet.');
+    return;
+  }
+  const lines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+  ];
+  _seoSitemapUrls.forEach(entry => {
+    const loc = /^https?:\/\//i.test(entry.url || '')
+      ? entry.url
+      : new URL(entry.page || '/', window.location.origin).href;
+    lines.push('  <url>');
+    lines.push(`    <loc>${loc.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</loc>`);
+    if (entry.lastSeen) lines.push(`    <lastmod>${String(entry.lastSeen).slice(0,10)}</lastmod>`);
+    lines.push('  </url>');
+  });
+  lines.push('</urlset>');
+
+  const blob = new Blob([lines.join('\n')], { type: 'application/xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sitemap.xml';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('Sitemap downloaded.');
+}
+
+function renderSEOPage(data) {
+  const pageScores = data.pageScores || [];
+  const trafficSources = data.trafficSources || { organic:0, direct:0, social:0, paid:0, referral:0, total:0 };
+  const pageSpeed = data.pageSpeed || [];
+  const intentMismatch = data.intentMismatch || [];
+  const sitemapUrls = data.sitemapUrls || [];
+  const days = data.days || 30;
+  _seoSitemapUrls = sitemapUrls;
+
+  const fmtMs = ms => {
+    if (ms === null || ms === undefined || !isFinite(ms)) return '—';
+    if (ms >= 60000) return (ms / 60000).toFixed(1) + 'm';
+    if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
+    return Math.round(ms) + 'ms';
+  };
+  const scoreColor = score => {
+    if (score >= 80) return '#12b76a';
+    if (score >= 60) return '#0ea5e9';
+    if (score >= 40) return '#f79009';
+    return '#f04438';
+  };
+  const scoreBadge = score => {
+    if (score >= 80) return 'badge badge-green';
+    if (score >= 60) return 'badge badge-purple';
+    if (score >= 40) return 'badge badge-default';
+    return 'badge badge-js_error';
+  };
+  const loadColor = ms => {
+    if (ms === null || ms === undefined) return 'var(--muted)';
+    if (ms > 3000) return '#f04438';
+    if (ms > 1500) return '#f79009';
+    return '#12b76a';
+  };
+
+  const scoreRows = pageScores.map(p => {
+    const color = scoreColor(p.seoScore);
+    return `
+      <tr>
+        <td><code style="font-size:.78rem;color:var(--cyan)">${esc(p.page)}</code></td>
+        <td style="min-width:160px">
+          <div style="display:flex;align-items:center;gap:.55rem">
+            <div style="flex:1;height:8px;background:var(--surface2);border-radius:999px;overflow:hidden">
+              <div style="width:${p.seoScore}%;height:100%;background:${color};border-radius:999px"></div>
+            </div>
+            <span style="font-size:.82rem;font-weight:700;color:${color}">${p.seoScore}</span>
+            <span class="${scoreBadge(p.seoScore)}">${esc(p.scoreLabel)}</span>
+          </div>
+        </td>
+        <td style="text-align:center">${fmtMs(p.avgDwellMs)}</td>
+        <td style="text-align:center;color:${p.bounceRate > 60 ? '#f04438' : 'var(--muted)'}">${p.bounceRate}%</td>
+        <td style="text-align:center">${p.avgScrollDepth !== null ? p.avgScrollDepth + '%' : '—'}</td>
+        <td style="text-align:center;color:${loadColor(p.avgLoadMs)}">${fmtMs(p.avgLoadMs)}</td>
+        <td style="text-align:center;color:${p.jsErrors > 0 ? '#f79009' : 'var(--muted)'}">${p.jsErrors}</td>
+        <td style="text-align:center;color:var(--muted)">${fmt(p.views)}</td>
+      </tr>`;
+  }).join('');
+
+  const speedRows = pageSpeed.map(p => `
+    <tr>
+      <td><code style="font-size:.78rem;color:var(--cyan)">${esc(p.page)}</code></td>
+      <td style="text-align:center;color:${loadColor(p.avgTtfbMs)}">${fmtMs(p.avgTtfbMs)}</td>
+      <td style="text-align:center;color:${loadColor(p.avgDomMs)}">${fmtMs(p.avgDomMs)}</td>
+      <td style="text-align:center;color:${loadColor(p.avgLoadMs)}">${fmtMs(p.avgLoadMs)}</td>
+      <td style="text-align:center;color:var(--muted)">${p.avgTransferKb !== null && p.avgTransferKb !== undefined ? fmt(p.avgTransferKb) + ' KB' : '—'}</td>
+      <td style="text-align:center;color:var(--muted)">${fmt(p.samples || 0)}</td>
+    </tr>`).join('');
+
+  const mismatchRows = intentMismatch.map(p => `
+    <tr>
+      <td><code style="font-size:.76rem;color:var(--cyan)">${esc(p.page)}</code></td>
+      <td style="text-align:center">${fmt(p.organicLandings)}</td>
+      <td style="text-align:center;color:${p.quickBounceRate >= 60 ? '#f04438' : '#f79009'}">${p.quickBounceRate}%</td>
+      <td style="text-align:center">${fmtMs(p.avgDwellMs)}</td>
+    </tr>`).join('');
+
+  const totalTrackedPages = pageScores.length;
+  const weakPages = pageScores.filter(p => p.seoScore < 60).length;
+
+  setMain('cust', `
+    <div class="page-content">
+      <div class="page-hdr">
+        <div class="page-hdr-left">
+          <h1 class="page-title">🔍 SEO Health</h1>
+          <p class="page-subtitle">Discoverability, performance, and engagement signals across your pages · last ${days} days</p>
+        </div>
+        <div class="page-hdr-actions">
+          <button class="btn btn-ghost btn-sm" onclick="downloadSitemap()">⬇ Download Sitemap</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Tracked Pages</div>
+          <div class="kpi-val">${fmt(totalTrackedPages)}</div>
+          <div class="kpi-sub">Pages with SEO metrics</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Organic Sessions</div>
+          <div class="kpi-val">${fmt(trafficSources.organic || 0)}</div>
+          <div class="kpi-sub">Detected search traffic</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Pages Needing Attention</div>
+          <div class="kpi-val">${fmt(weakPages)}</div>
+          <div class="kpi-sub">SEO score below 60</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Sitemap URLs</div>
+          <div class="kpi-val">${fmt(sitemapUrls.length)}</div>
+          <div class="kpi-sub">Ready to export</div>
+        </div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div class="chart-title">Traffic Sources</div>
+          </div>
+          ${trafficSources.total ? `
+            <div class="chart-wrap tall"><canvas id="ch-seo-sources"></canvas></div>
+          ` : `
+            <div class="empty-box" style="max-width:none;margin:0;padding:2rem 1.5rem">
+              <div class="empty-box-icon">🔎</div>
+              <h3>No source data yet</h3>
+              <p>Traffic sources will appear once session_start events include referrer or UTM data.</p>
+            </div>
+          `}
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <div class="chart-title">Search Intent Mismatch</div>
+          </div>
+          ${intentMismatch.length ? `
+            <div class="tbl-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th style="text-align:center">Organic Landings</th>
+                    <th style="text-align:center">Quick Bounce</th>
+                    <th style="text-align:center">Avg Dwell</th>
+                  </tr>
+                </thead>
+                <tbody>${mismatchRows}</tbody>
+              </table>
+            </div>
+          ` : `
+            <div class="empty-box" style="max-width:none;margin:0;padding:2rem 1.5rem">
+              <div class="empty-box-icon">✅</div>
+              <h3>No obvious intent mismatch</h3>
+              <p>Organic landing pages are not showing rapid drop-off right now.</p>
+            </div>
+          `}
+        </div>
+      </div>
+
+      ${pageSpeed.length ? `
+        <div class="table-card">
+          <div class="tbl-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th style="text-align:center">TTFB</th>
+                  <th style="text-align:center">DOM Ready</th>
+                  <th style="text-align:center">Full Load</th>
+                  <th style="text-align:center">Transfer</th>
+                  <th style="text-align:center">Samples</th>
+                </tr>
+              </thead>
+              <tbody>${speedRows}</tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+
+      ${pageScores.length ? `
+        <div class="table-card">
+          <div class="tbl-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>SEO Score</th>
+                  <th style="text-align:center">Avg Dwell</th>
+                  <th style="text-align:center">Bounce Rate</th>
+                  <th style="text-align:center">Avg Scroll</th>
+                  <th style="text-align:center">Load</th>
+                  <th style="text-align:center">JS Errors</th>
+                  <th style="text-align:center">Views</th>
+                </tr>
+              </thead>
+              <tbody>${scoreRows}</tbody>
+            </table>
+          </div>
+        </div>
+      ` : `
+        <div class="empty-box">
+          <div class="empty-box-icon">🔍</div>
+          <h3>No SEO data yet</h3>
+          <p>SEO scoring appears once page views, exits, and performance signals are captured for your project.</p>
+        </div>
+      `}
+    </div>`);
+
+  if (trafficSources.total) {
+    const ctx = document.getElementById('ch-seo-sources');
+    if (ctx) {
+      _charts.seoSources = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Organic', 'Direct', 'Social', 'Paid', 'Referral'],
+          datasets: [{
+            data: [trafficSources.organic, trafficSources.direct, trafficSources.social, trafficSources.paid, trafficSources.referral],
+            backgroundColor: ['#12b76a', '#6336ff', '#0ea5e9', '#f79009', '#a78bfa'],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '64%',
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: TT,
+          },
+        },
+      });
+    }
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════

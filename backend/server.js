@@ -62,6 +62,7 @@ app.use('/goals',    require('./routes/goals'));
 app.use('/funnels',  require('./routes/funnels'));
 app.use('/heatmap',  require('./routes/heatmap'));
 app.use('/friction', require('./routes/friction'));
+app.use('/seo',      require('./routes/seo'));
 app.use('/users',    require('./routes/users'));
 app.use('/ai',       require('./routes/ai'));
 app.use('/admin',    require('./routes/admin'));
