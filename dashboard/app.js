@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /* ──────────────────────── Constants & State ──────────────────────── */
 const API   = 'http://localhost:5000';
@@ -223,7 +223,7 @@ async function boot() {
 
 /* ──────────────────────── Customer Navigation ────────────────────── */
 function custNav(page) {
-  const pages = ['analytics','goals','funnels','sessions','retention','projects','friction','users'];
+  const pages = ['analytics','goals','funnels','sessions','retention','projects','friction','users','ai','heatmap'];
   pages.forEach(p=>{
     document.getElementById('sb-'+p)?.classList.toggle('active', p===page);
   });
@@ -244,6 +244,7 @@ function custNav(page) {
   else if(page==='ab')        loadAb();
   else if(page==='friction')  loadFriction();
   else if(page==='users')     loadUsers();
+  else if(page==='ai')        loadAI();
   else loadProjects();
 }
 
@@ -1166,8 +1167,11 @@ function renderSessionsPage(sessions) {
     const durStr = dur>=60 ? `${Math.floor(dur/60)}m ${dur%60}s` : `${dur}s`;
     const types = [...new Set(s.events.map(e=>e.event))];
     return `
-    <tr style="cursor:pointer" onclick="showSessionModal('${esc(s.session_id)}')">
-      <td style="font-family:monospace;font-size:.72rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.session_id.slice(0,20)+'\u2026')}</td>
+    <tr style="cursor:pointer" onclick="showSessionModal('${esc(s.session_id)}')"> 
+      <td style="font-family:monospace;font-size:.72rem;white-space:nowrap">
+        <span title="${esc(s.session_id)}">${esc(s.session_id.slice(0,20)+'\u2026')}</span>
+        <button onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(s.session_id)}').then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='⎘',1200)})" title="Copy full session ID" style="margin-left:.35rem;background:none;border:none;cursor:pointer;color:var(--muted);font-size:.8rem;padding:0;line-height:1">⎘</button>
+      </td>
       <td><span class="badge badge-blue" style="font-size:.7rem">${s.events.length}</span></td>
       <td style="font-size:.75rem">${durStr}</td>
       <td>${timeAgo(s.started_at)}</td>
@@ -1198,7 +1202,12 @@ function renderSessionsPage(sessions) {
 }
 
 async function showSessionModal(sessionId) {
-  openModal('Session: '+sessionId.slice(0,16)+'…', `<div id="sr-wrap" style="max-height:400px;overflow-y:auto">${loader()}</div>`);
+  openModal('Session', `
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.45rem .7rem">
+      <span style="font-family:monospace;font-size:.75rem;color:var(--text);word-break:break-all;flex:1">${esc(sessionId)}</span>
+      <button onclick="navigator.clipboard.writeText('${esc(sessionId)}').then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy',1500)})" style="flex-shrink:0;padding:.25rem .6rem;font-size:.72rem;background:var(--surface3,#333);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer">Copy</button>
+    </div>
+    <div id="sr-wrap" style="max-height:400px;overflow-y:auto">${loader()}</div>`);
   try {
     const d = await api(`/events/session/${encodeURIComponent(sessionId)}?projectId=${_analyticsProjectId}`);
     const evs = d.events||[];
@@ -1889,6 +1898,302 @@ function fmtTs(ts) {
     if(isNaN(d.getTime())) return String(ts).slice(11,19) || '—';
     return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
   } catch { return '—'; }
+}
+
+/* ──────────────────────── AI Insights ───────────────────────────── */
+let _aiChatHistory = [];
+
+// SSE streaming fetch — onToken(str) per token, onDone() when complete
+function streamResponse(path, body, onToken, onDone, onError) {
+  fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(_jwt ? { Authorization: `Bearer ${_jwt}` } : {}) },
+    body: JSON.stringify(body),
+  }).then(res => {
+    if (!res.ok) return res.json().then(d => onError(new Error(d?.error || `Server error ${res.status}`))).catch(() => onError(new Error(`Server error ${res.status}`)));
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buf = '';
+    function pump() {
+      reader.read().then(({ value, done }) => {
+        if (done) { onDone(); return; }
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') { onDone(); return; }
+          try {
+            const json = JSON.parse(data);
+            if (json.error) { onError(new Error(json.error)); return; }
+            if (json.token) onToken(json.token);
+          } catch (_) {}
+        }
+        pump();
+      }).catch(onError);
+    }
+    pump();
+  }).catch(onError);
+}
+
+function _aiStartStream(resultId, btnId) {
+  const r = document.getElementById(resultId), b = document.getElementById(btnId);
+  if (r) { r.style.display = 'block'; r.innerHTML = `<div class="ai-stream-box" id="${resultId}-text"></div>`; }
+  if (b) b.disabled = true;
+  return document.getElementById(resultId + '-text');
+}
+
+function _aiEndStream(resultId, btnId, fullText) {
+  const el = document.getElementById(resultId + '-text'), b = document.getElementById(btnId);
+  if (el) el.innerHTML = _aiFormatText(fullText);
+  if (b)  b.disabled = false;
+}
+
+function _aiFormatText(text) {
+  return text.split('\n').map(line => {
+    line = esc(line);
+    if (/^(INSIGHTS:|RECOMMENDATIONS:|PAGE:|DIAGNOSIS:|FIX:|SUMMARY:)/i.test(line.trim()))
+      return `<div class="ai-lbl">${line.trim()}</div>`;
+    if (/^[•\-]/.test(line.trim()))
+      return `<div class="ai-bullet"><span class="ai-dot">•</span><span>${line.replace(/^[•\-]\s*/,'')}</span></div>`;
+    if (!line.trim()) return `<div class="ai-gap"></div>`;
+    return `<div class="ai-line">${line}</div>`;
+  }).join('');
+}
+
+async function loadAI() {
+  if (!_analyticsProjectId) { await _ensureProject(); if (!_analyticsProjectId) return; }
+  _aiChatHistory = [];
+
+  // Fetch recent sessions for dropdown
+  let sessionOptions = `<option value="">Pick a session…</option>`;
+  try {
+    const sd = await api(`/ai/sessions?projectId=${_analyticsProjectId}`);
+    (sd.sessions || []).forEach(s => {
+      sessionOptions += `<option value="${esc(s.session_id)}">${esc(s.session_id.slice(0,28)+'…')}  ·  ${timeAgo(s.started_at)}  ·  ${s.event_count} events</option>`;
+    });
+  } catch (_) {}
+
+  setMain('cust', `
+    <style>
+      .ai-stream-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.875rem 1rem;min-height:36px}
+      .ai-lbl{font-weight:700;font-size:.78rem;color:var(--cyan);margin-top:.7rem;margin-bottom:.15rem;text-transform:uppercase;letter-spacing:.05em}
+      .ai-bullet{display:flex;gap:.45rem;font-size:.84rem;color:var(--text);margin:.2rem 0;line-height:1.55}
+      .ai-dot{color:var(--accent);flex-shrink:0;margin-top:.05rem}
+      .ai-line{font-size:.84rem;color:var(--text);line-height:1.6;margin:.1rem 0}
+      .ai-gap{height:.3rem}
+      .ai-cursor{display:inline-block;width:2px;height:.9em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:aiCursorBlink .6s step-end infinite}
+      @keyframes aiCursorBlink{50%{opacity:0}}
+      .ai-card{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:1rem}
+      .ai-card-l-cyan{border-left:4px solid var(--cyan)}
+      .ai-card-l-orange{border-left:4px solid #f97316}
+      .ai-card-l-purple{border-left:4px solid #a855f7}
+      .ai-card-l-accent{border-left:4px solid var(--accent)}
+      .ai-chip{display:inline-block;padding:.28rem .72rem;background:var(--surface2);border:1px solid var(--border);border-radius:20px;font-size:.75rem;color:var(--text);cursor:pointer;transition:background .15s,color .15s}
+      .ai-chip:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+      #ai-chat-messages{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem;padding:.25rem 0}
+      .chat-row{display:flex}.chat-row.user{justify-content:flex-end}.chat-row.ai{justify-content:flex-start}
+      .chat-bbl{max-width:82%;padding:.55rem .9rem;border-radius:14px;font-size:.84rem;line-height:1.6;word-break:break-word;white-space:pre-wrap}
+      .chat-bbl.user{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+      .chat-bbl.ai{background:var(--surface2);color:var(--text);border-bottom-left-radius:4px;border:1px solid var(--border)}
+    </style>
+    <div class="page-content">
+      <div class="page-header" style="margin-bottom:1.5rem">
+        <h2 style="font-size:1.25rem;font-weight:700;margin:0">✦ AI Insights</h2>
+        <p style="color:var(--muted);font-size:.82rem;margin:.25rem 0 0">Powered by Ollama · llama3.2 · Analysis based on your real data</p>
+      </div>
+
+      <!-- Analytics Insights -->
+      <div class="ai-card ai-card-l-cyan">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+          <div>
+            <div style="font-weight:700;font-size:.95rem">📊 Analytics Insights</div>
+            <div style="color:var(--muted);font-size:.78rem;margin-top:.15rem">Plain-English summary of the last 30 days</div>
+          </div>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="btn-ai-ins-regen" onclick="aiRunInsights()" title="Regenerate" style="display:none">↺</button>
+            <button class="btn btn-solid btn-sm" id="btn-ai-insights" onclick="aiRunInsights()">Generate</button>
+          </div>
+        </div>
+        <div id="ai-insights-result" style="display:none"></div>
+      </div>
+
+      <!-- Friction Diagnoses -->
+      <div class="ai-card ai-card-l-orange">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+          <div>
+            <div style="font-weight:700;font-size:.95rem">🔥 Friction Diagnoses</div>
+            <div style="color:var(--muted);font-size:.78rem;margin-top:.15rem">Root cause + fix for each high-friction page</div>
+          </div>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="btn-ai-fri-regen" onclick="aiRunFriction()" title="Regenerate" style="display:none">↺</button>
+            <button class="btn btn-solid btn-sm" id="btn-ai-friction" onclick="aiRunFriction()">Diagnose</button>
+          </div>
+        </div>
+        <div id="ai-friction-result" style="display:none"></div>
+      </div>
+
+      <!-- Session Summarizer -->
+      <div class="ai-card ai-card-l-purple">
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">🎬 Session Summarizer</div>
+        <div style="color:var(--muted);font-size:.78rem;margin-bottom:.7rem">What did this user do?</div>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+          <select id="ai-session-select" style="flex:1;min-width:180px;padding:.42rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.8rem">${sessionOptions}</select>
+          <div style="display:flex;gap:.4rem">
+            <button class="btn btn-ghost btn-sm" id="btn-ai-sess-regen" onclick="aiRunSession()" title="Regenerate" style="display:none">↺</button>
+            <button class="btn btn-solid btn-sm" id="btn-ai-session" onclick="aiRunSession()">Summarize</button>
+          </div>
+        </div>
+        <div id="ai-session-result" style="display:none;margin-top:.75rem"></div>
+      </div>
+
+      <!-- Chatbot -->
+      <div class="ai-card ai-card-l-accent">
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">💬 Ask TrackSense AI</div>
+        <div style="color:var(--muted);font-size:.78rem;margin-bottom:.7rem">Context-aware conversation · remembers your questions</div>
+        <div id="ai-chat-messages"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:.35rem;margin:.65rem 0 .55rem">
+          <span class="ai-chip" onclick="aiChatChip(this)">What's my bounce rate?</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">Which page loses most users?</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">What should I fix first?</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">How are my goals performing?</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">Summarize my last 30 days</span>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <input id="ai-chat-input" type="text" placeholder="Ask anything about your analytics…"
+            style="flex:1;padding:.5rem .75rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.84rem"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();aiChatSend()}">
+          <button class="btn btn-solid" id="btn-ai-chat" onclick="aiChatSend()" style="padding:.48rem 1.1rem;font-size:.84rem">Send</button>
+        </div>
+      </div>
+    </div>
+  `);
+  aiChatInit();
+}
+
+// ── Streaming runs ─────────────────────────────────────────────────────────────
+async function aiRunInsights() {
+  if (!_analyticsProjectId) return;
+  const el = _aiStartStream('ai-insights-result', 'btn-ai-insights');
+  document.getElementById('btn-ai-ins-regen').style.display = 'none';
+  let full = '';
+  streamResponse('/ai/insights/stream', { projectId: _analyticsProjectId },
+    tok => { full += tok; if (el) el.innerHTML = _aiFormatText(full) + '<span class="ai-cursor"></span>'; },
+    ()  => { _aiEndStream('ai-insights-result', 'btn-ai-insights', full); document.getElementById('btn-ai-ins-regen').style.display = ''; },
+    err => { const r = document.getElementById('ai-insights-result'); if (r) r.innerHTML = `<div style="color:var(--red);font-size:.84rem">⚠ ${esc(err.message)}</div>`; document.getElementById('btn-ai-insights').disabled = false; }
+  );
+}
+
+async function aiRunFriction() {
+  if (!_analyticsProjectId) return;
+  const el = _aiStartStream('ai-friction-result', 'btn-ai-friction');
+  document.getElementById('btn-ai-fri-regen').style.display = 'none';
+  let full = '';
+  streamResponse('/ai/friction/stream', { projectId: _analyticsProjectId },
+    tok => { full += tok; if (el) el.innerHTML = _aiFormatText(full) + '<span class="ai-cursor"></span>'; },
+    ()  => { _aiEndStream('ai-friction-result', 'btn-ai-friction', full); document.getElementById('btn-ai-fri-regen').style.display = ''; },
+    err => { const r = document.getElementById('ai-friction-result'); if (r) r.innerHTML = `<div style="color:var(--red);font-size:.84rem">⚠ ${esc(err.message)}</div>`; document.getElementById('btn-ai-friction').disabled = false; }
+  );
+}
+
+async function aiRunSession() {
+  if (!_analyticsProjectId) return;
+  const sel = document.getElementById('ai-session-select');
+  const sessionId = sel ? sel.value.trim() : '';
+  if (!sessionId) { if (sel) sel.focus(); return; }
+  const r = document.getElementById('ai-session-result'), b = document.getElementById('btn-ai-session');
+  if (r) { r.style.display = 'block'; r.innerHTML = `<div class="ai-stream-box" id="ai-session-text" style="font-size:.85rem;line-height:1.7"></div>`; }
+  if (b) b.disabled = true;
+  document.getElementById('btn-ai-sess-regen').style.display = 'none';
+  const el = document.getElementById('ai-session-text');
+  let full = '';
+  streamResponse('/ai/session-summary/stream', { projectId: _analyticsProjectId, sessionId },
+    tok => { full += tok; if (el) el.textContent = full; },
+    ()  => { if (el) el.textContent = full; if (b) b.disabled = false; document.getElementById('btn-ai-sess-regen').style.display = ''; },
+    err => { if (r) r.innerHTML = `<div style="color:var(--red);font-size:.84rem">⚠ ${esc(err.message)}</div>`; if (b) b.disabled = false; }
+  );
+}
+
+// ── Chatbot ────────────────────────────────────────────────────────────────────
+function aiChatInit() {
+  _aiChatHistory = [];
+  const el = document.getElementById('ai-chat-messages');
+  if (el) el.innerHTML = `
+    <div class="chat-row ai">
+      <div class="chat-bbl ai">👋 Hi! I'm TrackSense AI. I have full access to your project's analytics — sessions, friction signals, top pages, event data, and more. Ask me anything!</div>
+    </div>`;
+}
+
+function _aiChatScroll() {
+  const el = document.getElementById('ai-chat-messages');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function aiChatChip(el) {
+  const input = document.getElementById('ai-chat-input');
+  if (input) { input.value = el.textContent; input.focus(); }
+}
+
+async function aiChatSend() {
+  if (!_analyticsProjectId) return;
+  const input   = document.getElementById('ai-chat-input');
+  const sendBtn = document.getElementById('btn-ai-chat');
+  const question = (input?.value || '').trim();
+  if (!question) { input?.focus(); return; }
+
+  _aiChatHistory.push({ role: 'user', content: question });
+  if (input) input.value = '';
+  if (sendBtn) sendBtn.disabled = true;
+
+  const msgEl = document.getElementById('ai-chat-messages');
+  if (msgEl) {
+    const userRow = document.createElement('div');
+    userRow.className = 'chat-row user';
+    userRow.innerHTML = `<div class="chat-bbl user">${esc(question)}</div>`;
+    msgEl.appendChild(userRow);
+    _aiChatScroll();
+  }
+
+  const tempId = 'ai-bbl-' + Date.now();
+  if (msgEl) {
+    const aiRow = document.createElement('div');
+    aiRow.className = 'chat-row ai';
+    aiRow.innerHTML = `<div class="chat-bbl ai" id="${tempId}"><span class="ai-cursor"></span></div>`;
+    msgEl.appendChild(aiRow);
+    _aiChatScroll();
+  }
+
+  const bubble   = document.getElementById(tempId);
+  const messages = _aiChatHistory.filter(m => m.role === 'user' || m.role === 'assistant');
+  let aiText = '';
+
+  fetch(API + '/ai/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(_jwt ? { Authorization: `Bearer ${_jwt}` } : {}) },
+    body: JSON.stringify({ projectId: _analyticsProjectId, messages }),
+  }).then(res => {
+    if (!res.ok) return res.json().then(d => { throw new Error(d?.error || `Error ${res.status}`); });
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buf = '';
+    function pump() {
+      reader.read().then(({ value, done }) => {
+        if (done) { _aiChatHistory.push({ role: 'assistant', content: aiText }); if (bubble) bubble.textContent = aiText; if (sendBtn) sendBtn.disabled = false; _aiChatScroll(); return; }
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') { _aiChatHistory.push({ role: 'assistant', content: aiText }); if (bubble) bubble.textContent = aiText; if (sendBtn) sendBtn.disabled = false; _aiChatScroll(); return; }
+          try {
+            const json = JSON.parse(data);
+            if (json.error) throw new Error(json.error);
+            if (json.token) { aiText += json.token; if (bubble) { bubble.textContent = aiText; bubble.insertAdjacentHTML('beforeend', '<span class="ai-cursor"></span>'); _aiChatScroll(); } }
+          } catch (e) { if (e.message && !e.message.startsWith('JSON')) throw e; }
+        }
+        pump();
+      }).catch(err => { if (bubble) bubble.innerHTML = `<span style="color:var(--red)">⚠ ${esc(err.message)}</span>`; if (sendBtn) sendBtn.disabled = false; });
+    }
+    pump();
+  }).catch(err => { if (bubble) bubble.innerHTML = `<span style="color:var(--red)">⚠ ${esc(err.message)}</span>`; if (sendBtn) sendBtn.disabled = false; });
 }
 
 /* ──────────────────────── Modal ──────────────────────────────────── */

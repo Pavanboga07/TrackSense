@@ -63,6 +63,7 @@ app.use('/funnels',  require('./routes/funnels'));
 app.use('/heatmap',  require('./routes/heatmap'));
 app.use('/friction', require('./routes/friction'));
 app.use('/users',    require('./routes/users'));
+app.use('/ai',       require('./routes/ai'));
 app.use('/admin',    require('./routes/admin'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
