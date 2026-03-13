@@ -192,6 +192,110 @@ function logout() {
   document.getElementById('v-auth').style.display='flex';
 }
 
+const WALKTHROUGH_SEEN_KEY = 'ts_walkthrough_seen';
+
+function getWalkthroughProject() {
+  if (!_customerProjects.length) return null;
+  return _customerProjects.find(p => p.id === _analyticsProjectId)
+    || _customerProjects.find(p => p.id === localStorage.getItem('ts_project'))
+    || _customerProjects[0]
+    || null;
+}
+
+function helpCardHtml({ title, intro, steps, actions = [] }) {
+  return `
+    <div style="background:linear-gradient(180deg,#f7f9ff 0%,#ffffff 100%);border:1px solid #d9e4ff;border-radius:12px;padding:1rem 1.05rem;margin-bottom:1rem">
+      <div style="font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:.25rem">${title}</div>
+      <div style="color:var(--muted);font-size:.82rem;line-height:1.6">${intro}</div>
+      <ol style="margin:.8rem 0 0 1.1rem;color:var(--text);font-size:.84rem;line-height:1.7">
+        ${steps.map(step => `<li>${step}</li>`).join('')}
+      </ol>
+      ${actions.length ? `<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.9rem">${actions.join('')}</div>` : ''}
+    </div>`;
+}
+
+function openGettingStarted(auto = false) {
+  const project = getWalkthroughProject();
+  const hasProject = !!project;
+  if (auto) localStorage.setItem(WALKTHROUGH_SEEN_KEY, '1');
+
+  openModal('Getting Started with TrackSense', `
+    <div style="display:grid;gap:1rem">
+      <div style="padding:.95rem 1rem;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:.84rem;line-height:1.7">
+        TrackSense is easiest when you follow this order: <strong style="color:var(--text)">create a project</strong>, <strong style="color:var(--text)">install the snippet</strong>, <strong style="color:var(--text)">visit your site</strong>, then <strong style="color:var(--text)">read the dashboard</strong>.
+      </div>
+
+      <div style="display:grid;gap:.75rem">
+        <div style="display:flex;gap:.75rem;align-items:flex-start;padding:.8rem .9rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)">
+          <div style="width:28px;height:28px;border-radius:999px;background:var(--blue-bg);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">1</div>
+          <div>
+            <div style="font-weight:700;color:var(--text)">Create a project</div>
+            <div style="font-size:.82rem;color:var(--muted);line-height:1.6">Each project gives you one tracking key. ${hasProject ? `You already have <strong style="color:var(--text)">${esc(project.name)}</strong>.` : 'Start here if this is your first time using TrackSense.'}</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:.75rem;align-items:flex-start;padding:.8rem .9rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)">
+          <div style="width:28px;height:28px;border-radius:999px;background:var(--purple-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">2</div>
+          <div>
+            <div style="font-weight:700;color:var(--text)">Install the tracking snippet</div>
+            <div style="font-size:.82rem;color:var(--muted);line-height:1.6">Copy the snippet from Projects &amp; API and paste it right before <code style="background:var(--surface2);border:1px solid var(--border);padding:.05rem .25rem;border-radius:4px">&lt;/body&gt;</code> on your website.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:.75rem;align-items:flex-start;padding:.8rem .9rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)">
+          <div style="width:28px;height:28px;border-radius:999px;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">3</div>
+          <div>
+            <div style="font-weight:700;color:var(--text)">Generate your first events</div>
+            <div style="font-size:.82rem;color:var(--muted);line-height:1.6">Open your website, click around, scroll, and move between pages. TrackSense will capture page views, clicks, scroll depth, and errors automatically.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:.75rem;align-items:flex-start;padding:.8rem .9rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)">
+          <div style="width:28px;height:28px;border-radius:999px;background:var(--yellow-bg);color:var(--yellow);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">4</div>
+          <div>
+            <div style="font-weight:700;color:var(--text)">Read the important pages</div>
+            <div style="font-size:.82rem;color:var(--muted);line-height:1.6">Start with <strong style="color:var(--text)">Overview</strong> for totals, <strong style="color:var(--text)">Sessions</strong> for user journeys, <strong style="color:var(--text)">Heatmaps</strong> for clicks, and <strong style="color:var(--text)">AI Insights</strong> for plain-English advice.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+        ${hasProject
+          ? '<button id="walkthrough-primary" class="btn btn-solid" onclick="walkthroughInstallSnippet()">Install snippet</button>'
+          : '<button id="walkthrough-primary" class="btn btn-solid" onclick="walkthroughCreateProject()">Create project</button>'}
+        <button class="btn btn-secondary" onclick="walkthroughOpenPage(\'analytics\')">Open overview</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      </div>
+
+      <div style="font-size:.78rem;color:var(--muted);line-height:1.6">
+        You can reopen this guide anytime using the <strong style="color:var(--text)">Getting Started</strong> button in the top bar.
+      </div>
+    </div>`);
+
+  setTimeout(() => document.getElementById('walkthrough-primary')?.focus(), 50);
+}
+
+function walkthroughCreateProject() {
+  closeModal();
+  custNav('projects');
+  setTimeout(() => showNewProjectModal(), 120);
+}
+
+function walkthroughInstallSnippet() {
+  const project = getWalkthroughProject();
+  closeModal();
+  custNav('projects');
+  setTimeout(() => {
+    if (project) showEmbedModal(project.api_key, project.name);
+    else showNewProjectModal();
+  }, 140);
+}
+
+function walkthroughOpenPage(page) {
+  closeModal();
+  custNav(page);
+}
+
 /* ──────────────────────── Boot ───────────────────────────────────── */
 async function boot() {
   if(!_user) {
@@ -219,6 +323,9 @@ async function boot() {
     if(cav)  cav.textContent  = av;
     if(cav2) cav2.textContent = av;
     await custNav('analytics');
+    if (!localStorage.getItem(WALKTHROUGH_SEEN_KEY)) {
+      setTimeout(() => openGettingStarted(true), 180);
+    }
   }
 }
 
@@ -263,6 +370,7 @@ async function loadProjects() {
 }
 
 function renderProjectsPage(projects) {
+  const walkthroughProject = getWalkthroughProject() || projects[0] || null;
   const html = `
     <div class="page-content">
       <div class="page-hdr">
@@ -274,12 +382,29 @@ function renderProjectsPage(projects) {
           <button class="btn btn-solid btn-sm" onclick="showNewProjectModal()">+ New project</button>
         </div>
       </div>
+      ${projects.length > 0 ? helpCardHtml({
+        title: 'Quick start for beginners',
+        intro: 'Use one project to get TrackSense working end-to-end. Once you see events in Overview, the rest of the dashboard becomes much easier to understand.',
+        steps: [
+          'Pick one project and copy its install snippet.',
+          'Paste the snippet right before the closing body tag on your website.',
+          'Open your site and click, scroll, and move across pages once.',
+          'Come back to TrackSense and open Overview or Sessions to confirm data is arriving.'
+        ],
+        actions: [
+          '<button class="btn btn-secondary btn-sm" onclick="openGettingStarted()">View walkthrough</button>',
+          walkthroughProject ? `<button class="btn btn-solid btn-sm" onclick="showEmbedModal(\'${esc(walkthroughProject.api_key)}\',\'${esc(walkthroughProject.name)}\')">Install snippet</button>` : ''
+        ].filter(Boolean)
+      }) : ''}
       ${projects.length === 0 ? `
         <div class="empty-box">
           <div class="empty-box-icon">⚡</div>
           <h3>Create your first project</h3>
           <p>Get a tracking API key and embed it on your website. All user interactions will be captured automatically.</p>
-          <button class="btn btn-solid" onclick="showNewProjectModal()" style="width:auto;padding:.6rem 1.5rem">Create project</button>
+          <div style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-top:.75rem">
+            <button class="btn btn-solid" onclick="showNewProjectModal()" style="width:auto;padding:.6rem 1.5rem">Create project</button>
+            <button class="btn btn-secondary" onclick="openGettingStarted()" style="width:auto;padding:.6rem 1.5rem">View walkthrough</button>
+          </div>
         </div>
       ` : `
         <div class="proj-grid">
@@ -471,6 +596,21 @@ function renderAnalyticsPage(stats, events) {
         </div>
       </div>
 
+      ${stats.totalEvents === 0 ? helpCardHtml({
+        title: 'New here? Follow these 4 steps',
+        intro: 'Overview will start filling up as soon as your website sends its first events. You do not need to configure clicks or page views manually.',
+        steps: [
+          'Open Projects & API and copy the tracking snippet for your project.',
+          'Paste it into your website right before the closing body tag.',
+          'Visit your website once and click or scroll on a few pages.',
+          'Return here and press Refresh to confirm that TrackSense is receiving data.'
+        ],
+        actions: [
+          '<button class="btn btn-secondary btn-sm" onclick="openGettingStarted()">Open walkthrough</button>',
+          '<button class="btn btn-solid btn-sm" onclick="walkthroughInstallSnippet()">Install snippet</button>'
+        ]
+      }) : ''}
+
       <!-- KPI Cards -->
       <div class="kpi-grid">
         <div class="kpi-card">
@@ -597,11 +737,28 @@ function renderAnalyticsPage(stats, events) {
 function renderNoProjects() {
   setMain('cust', `
     <div class="page-content">
+      ${helpCardHtml({
+        title: 'Start here if this is your first time',
+        intro: 'TrackSense becomes useful after one simple setup flow: create a project, install the snippet, visit your site, then come back to Overview.',
+        steps: [
+          'Create your first project to get a tracking key.',
+          'Paste the snippet on your website.',
+          'Open your website once to generate events.',
+          'Return to the dashboard to view sessions, heatmaps, SEO, and AI insights.'
+        ],
+        actions: [
+          '<button class="btn btn-secondary btn-sm" onclick="openGettingStarted()">Open walkthrough</button>',
+          '<button class="btn btn-solid btn-sm" onclick="custNav(\'projects\')">Go to projects</button>'
+        ]
+      })}
       <div class="empty-box" style="margin-top:4rem">
         <div class="empty-box-icon">⚡</div>
         <h3>Create your first project</h3>
         <p>Get a tracking key and embed it on your website. Analytics will appear here automatically — no manual event configuration required.</p>
-        <button class="btn btn-solid" onclick="custNav('projects')" style="width:auto;padding:.6rem 1.75rem">+ Create project</button>
+        <div style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-top:.75rem">
+          <button class="btn btn-solid" onclick="custNav('projects')" style="width:auto;padding:.6rem 1.75rem">+ Create project</button>
+          <button class="btn btn-secondary" onclick="openGettingStarted()" style="width:auto;padding:.6rem 1.75rem">View walkthrough</button>
+        </div>
       </div>
     </div>`);
 }
@@ -2253,7 +2410,7 @@ function _aiEndStream(resultId, btnId, fullText) {
 function _aiFormatText(text) {
   return text.split('\n').map(line => {
     line = esc(line);
-    if (/^(INSIGHTS:|RECOMMENDATIONS:|PAGE:|DIAGNOSIS:|FIX:|SUMMARY:)/i.test(line.trim()))
+    if (/^(INSIGHTS:|RECOMMENDATIONS:|PAGE:|DIAGNOSIS:|FIX:|SUMMARY:|SEO ISSUES:|QUICK WINS:|TRAFFIC GROWTH:)/i.test(line.trim()))
       return `<div class="ai-lbl">${line.trim()}</div>`;
     if (/^[•\-]/.test(line.trim()))
       return `<div class="ai-bullet"><span class="ai-dot">•</span><span>${line.replace(/^[•\-]\s*/,'')}</span></div>`;
@@ -2290,6 +2447,7 @@ async function loadAI() {
       .ai-card-l-orange{border-left:4px solid #f97316}
       .ai-card-l-purple{border-left:4px solid #a855f7}
       .ai-card-l-accent{border-left:4px solid var(--accent)}
+      .ai-card-l-green{border-left:4px solid #22c55e}
       .ai-chip{display:inline-block;padding:.28rem .72rem;background:var(--surface2);border:1px solid var(--border);border-radius:20px;font-size:.75rem;color:var(--text);cursor:pointer;transition:background .15s,color .15s}
       .ai-chip:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
       #ai-chat-messages{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem;padding:.25rem 0}
@@ -2334,6 +2492,21 @@ async function loadAI() {
         <div id="ai-friction-result" style="display:none"></div>
       </div>
 
+      <!-- SEO Advisor -->
+      <div class="ai-card ai-card-l-green">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+          <div>
+            <div style="font-weight:700;font-size:.95rem">🔍 SEO Advisor</div>
+            <div style="color:var(--muted);font-size:.78rem;margin-top:.15rem">AI audit: critical pages, quick wins &amp; traffic growth tips</div>
+          </div>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="btn-ai-seo-regen" onclick="aiRunSEOAdvisor()" title="Regenerate" style="display:none">↺</button>
+            <button class="btn btn-solid btn-sm" id="btn-ai-seo" onclick="aiRunSEOAdvisor()">Analyse</button>
+          </div>
+        </div>
+        <div id="ai-seo-result" style="display:none"></div>
+      </div>
+
       <!-- Session Summarizer -->
       <div class="ai-card ai-card-l-purple">
         <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">🎬 Session Summarizer</div>
@@ -2359,6 +2532,9 @@ async function loadAI() {
           <span class="ai-chip" onclick="aiChatChip(this)">What should I fix first?</span>
           <span class="ai-chip" onclick="aiChatChip(this)">How are my goals performing?</span>
           <span class="ai-chip" onclick="aiChatChip(this)">Summarize my last 30 days</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">How can I improve organic traffic?</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">Which pages have the worst SEO?</span>
+          <span class="ai-chip" onclick="aiChatChip(this)">Why are users leaving quickly?</span>
         </div>
         <div style="display:flex;gap:.5rem">
           <input id="ai-chat-input" type="text" placeholder="Ask anything about your analytics…"
@@ -2394,6 +2570,18 @@ async function aiRunFriction() {
     tok => { full += tok; if (el) el.innerHTML = _aiFormatText(full) + '<span class="ai-cursor"></span>'; },
     ()  => { _aiEndStream('ai-friction-result', 'btn-ai-friction', full); document.getElementById('btn-ai-fri-regen').style.display = ''; },
     err => { const r = document.getElementById('ai-friction-result'); if (r) r.innerHTML = `<div style="color:var(--red);font-size:.84rem">⚠ ${esc(err.message)}</div>`; document.getElementById('btn-ai-friction').disabled = false; }
+  );
+}
+
+async function aiRunSEOAdvisor() {
+  if (!_analyticsProjectId) return;
+  const el = _aiStartStream('ai-seo-result', 'btn-ai-seo');
+  document.getElementById('btn-ai-seo-regen').style.display = 'none';
+  let full = '';
+  streamResponse('/ai/seo-advisor/stream', { projectId: _analyticsProjectId },
+    tok => { full += tok; if (el) el.innerHTML = _aiFormatText(full) + '<span class="ai-cursor"></span>'; },
+    ()  => { _aiEndStream('ai-seo-result', 'btn-ai-seo', full); document.getElementById('btn-ai-seo-regen').style.display = ''; },
+    err => { const r = document.getElementById('ai-seo-result'); if (r) r.innerHTML = `<div style="color:var(--red);font-size:.84rem">⚠ ${esc(err.message)}</div>`; document.getElementById('btn-ai-seo').disabled = false; }
   );
 }
 

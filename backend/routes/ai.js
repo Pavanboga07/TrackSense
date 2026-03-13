@@ -228,6 +228,120 @@ SESSION (${events.length} events):
 ${JSON.stringify(events, null, 2)}`;
 }
 
+// ── SEO data fetcher (used by AI SEO advisor + chat context) ──────────────────
+function getSEOData(projectId, days = 30) {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const parse = (raw) => { try { return JSON.parse(raw || '{}'); } catch (_) { return {}; } };
+
+  const sessionStarts = db.all(
+    `SELECT session_id, metadata FROM events WHERE project_id=? AND event='session_start' AND timestamp>=?`,
+    [projectId, since]
+  );
+
+  const trafficSources = { organic: 0, direct: 0, social: 0, paid: 0, referral: 0 };
+  const socialDomains  = ['facebook','instagram','twitter','x.com','linkedin','tiktok','youtube','reddit'];
+  const searchDomains  = ['google.','bing.','duckduckgo.','yahoo.','yandex.'];
+  for (const row of sessionStarts) {
+    const meta     = parse(row.metadata);
+    const referrer = String(meta.referrer || '').toLowerCase();
+    const medium   = String(meta.utm_medium || '').toLowerCase();
+    if (['cpc','ppc','paid','paidsearch','paid_search'].includes(medium)) trafficSources.paid++;
+    else if (medium === 'organic')                                         trafficSources.organic++;
+    else if (!referrer && !meta.utm_source)                               trafficSources.direct++;
+    else if (socialDomains.some(s => referrer.includes(s)))               trafficSources.social++;
+    else if (searchDomains.some(s => referrer.includes(s)))               trafficSources.organic++;
+    else                                                                   trafficSources.referral++;
+  }
+
+  const pageStats = {};
+  const ep = (page) => {
+    if (!pageStats[page]) pageStats[page] = { views:0, bounceCount:0, dwellSum:0, dwellCount:0, scrollSum:0, scrollCount:0, jsErrors:0, loadSum:0, loadCount:0 };
+    return pageStats[page];
+  };
+
+  db.all(`SELECT page FROM events WHERE project_id=? AND event='page_view' AND page IS NOT NULL AND timestamp>=?`, [projectId, since])
+    .forEach(r => ep(r.page).views++);
+
+  for (const r of db.all(`SELECT page, metadata FROM events WHERE project_id=? AND event='page_exit' AND page IS NOT NULL AND timestamp>=?`, [projectId, since])) {
+    const p = ep(r.page), m = parse(r.metadata), d = Number(m.time_on_page_ms);
+    if (Number.isFinite(d) && d >= 0) { p.dwellSum += d; p.dwellCount++; if (d < 5000) p.bounceCount++; }
+  }
+
+  for (const r of db.all(`SELECT page, metadata FROM events WHERE project_id=? AND event='scroll_depth' AND page IS NOT NULL AND timestamp>=?`, [projectId, since])) {
+    const p = ep(r.page), m = parse(r.metadata), d = Number(m.depth_percent);
+    if (Number.isFinite(d) && d > 0) { p.scrollSum += d; p.scrollCount++; }
+  }
+
+  db.all(`SELECT page, COUNT(*) as cnt FROM events WHERE project_id=? AND event='js_error' AND page IS NOT NULL AND timestamp>=? GROUP BY page`, [projectId, since])
+    .forEach(r => ep(r.page).jsErrors = Number(r.cnt) || 0);
+
+  for (const r of db.all(`SELECT page, metadata FROM events WHERE project_id=? AND event='page_performance' AND page IS NOT NULL AND timestamp>=?`, [projectId, since])) {
+    const p = ep(r.page), m = parse(r.metadata), l = Number(m.page_load_ms);
+    if (Number.isFinite(l) && l >= 0) { p.loadSum += l; p.loadCount++; }
+  }
+
+  const pageScores = Object.entries(pageStats).map(([page, p]) => {
+    const avgDwell  = p.dwellCount  > 0 ? Math.round(p.dwellSum  / p.dwellCount)  : null;
+    const avgScroll = p.scrollCount > 0 ? Math.round(p.scrollSum / p.scrollCount) : null;
+    const avgLoad   = p.loadCount   > 0 ? Math.round(p.loadSum   / p.loadCount)   : null;
+    const bounce    = p.views > 0 ? Math.round((p.bounceCount / p.views) * 100) : 0;
+    let score = 100;
+    if (avgDwell  !== null) { if (avgDwell  < 15000) score -= 25; else if (avgDwell  < 30000) score -= 10; }
+    if (bounce > 60)          score -= 20; else if (bounce > 40) score -= 10;
+    if (avgScroll !== null) { if (avgScroll < 30)    score -= 15; else if (avgScroll < 50)    score -= 7;  }
+    score -= Math.min(20, p.jsErrors * 10);
+    if (avgLoad   !== null) { if (avgLoad   > 3000)  score -= 15; else if (avgLoad   > 1500)  score -= 7;  }
+    return { page, views: p.views, bounceRate: bounce, avgDwellMs: avgDwell, avgScrollDepth: avgScroll, avgLoadMs: avgLoad, jsErrors: p.jsErrors, seoScore: Math.max(0, Math.min(100, score)) };
+  }).sort((a, b) => a.seoScore - b.seoScore); // worst first
+
+  const rageRows = db.all(
+    `SELECT page, COUNT(*) as cnt FROM events WHERE project_id=? AND event='rage_click' AND page IS NOT NULL AND timestamp>=? GROUP BY page ORDER BY cnt DESC LIMIT 5`,
+    [projectId, since]
+  );
+  return { pageScores, trafficSources, rageRows, totalSessions: sessionStarts.length, days };
+}
+
+function buildSEOContextSnippet(seoData) {
+  const { pageScores, trafficSources, totalSessions } = seoData;
+  const total      = Object.values(trafficSources).reduce((a, b) => a + b, 0);
+  const organicPct = total > 0 ? Math.round((trafficSources.organic / total) * 100) : 0;
+  const worstPages = pageScores.slice(0, 3).map(p => `${p.page}(score:${p.seoScore})`).join(', ');
+  return `SEO CONTEXT: organic traffic ${organicPct}% of ${totalSessions} sessions. Lowest-scoring pages: ${worstPages || 'none tracked'}.`;
+}
+
+function buildSEOAdvisorPrompt(seoData) {
+  const { pageScores, trafficSources, rageRows, totalSessions, days } = seoData;
+  const total     = Object.values(trafficSources).reduce((a, b) => a + b, 0);
+  const pct       = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
+  const critPages = pageScores.slice(0, 5);
+  return `Website SEO performance data (last ${days} days):
+
+TRAFFIC: ${totalSessions} sessions — organic ${pct(trafficSources.organic)}%, direct ${pct(trafficSources.direct)}%, social ${pct(trafficSources.social)}%, paid ${pct(trafficSources.paid)}%, referral ${pct(trafficSources.referral)}%
+
+CRITICAL PAGES (lowest SEO scores):
+${critPages.length ? critPages.map(p =>
+  `  ${p.page}: score ${p.seoScore}/100 | bounce ${p.bounceRate}% | dwell ${p.avgDwellMs != null ? Math.round(p.avgDwellMs / 1000) + 's' : 'N/A'} | scroll ${p.avgScrollDepth ?? 'N/A'}% | load ${p.avgLoadMs != null ? p.avgLoadMs + 'ms' : 'N/A'} | JS errors ${p.jsErrors}`
+).join('\n') : '  (no page data yet)'}
+${rageRows.length ? '\nRAGE CLICK PAGES: ' + rageRows.map(r => `${r.page}(${r.cnt})`).join(', ') : ''}
+Respond in EXACTLY this format (no intro sentence):
+
+SEO ISSUES:
+• [most critical SEO problem — name the page and the specific metric]
+• [second SEO issue with actual numbers from the data]
+• [third issue affecting organic rankings or user engagement signals]
+
+QUICK WINS:
+• [fastest single fix for biggest score improvement — name page and metric to change]
+• [low-effort improvement to grow organic traffic share from ${pct(trafficSources.organic)}%]
+• [fix that would help 2 or more pages at once]
+
+TRAFFIC GROWTH:
+• [one concrete strategy to increase organic sessions based on the current data]
+• [one engagement improvement to strengthen dwell and scroll SEO signals]
+
+Each bullet: 1–2 sentences maximum. Use real page names and numbers.`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NON-STREAMING ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -336,8 +450,9 @@ router.post('/chat', async (req, res) => {
   }));
   try {
     projectService.getProject(projectId, req.user.id);
-    const ctx = buildContextSummary(getProjectStats(projectId, 30), getFrictionData(projectId, 30));
-    await streamOllamaChat(clean, ctx, res);
+    const ctx    = buildContextSummary(getProjectStats(projectId, 30), getFrictionData(projectId, 30));
+    const seoCtx = buildSEOContextSnippet(getSEOData(projectId, 30));
+    await streamOllamaChat(clean, ctx + '\n\n' + seoCtx, res);
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
     else { res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); }
@@ -358,6 +473,27 @@ router.get('/sessions', async (req, res) => {
     );
     res.json({ sessions: rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST /ai/seo-advisor/stream — SEO audit powered by AI ───────────────────
+router.post('/seo-advisor/stream', async (req, res) => {
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId required' });
+  try {
+    projectService.getProject(projectId, req.user.id);
+    const seoData = getSEOData(projectId, 30);
+    if (!seoData.pageScores.length && !seoData.totalSessions) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.flushHeaders();
+      res.write(`data: ${JSON.stringify({ token: 'No SEO data found yet. Start tracking page views to get AI-powered SEO recommendations.' })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end(); return;
+    }
+    await streamOllama(buildSEOAdvisorPrompt(seoData), res);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+    else { res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`); res.end(); }
+  }
 });
 
 module.exports = router;
